@@ -1,0 +1,10 @@
+{
+    "window_size": [
+        900,
+        600
+    ],
+    "pinned_plugins": [
+        "quick_copy"
+    ],
+    "theme": "light"
+}
