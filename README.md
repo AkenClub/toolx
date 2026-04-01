@@ -40,6 +40,20 @@ pip install PyQt6
 python main.py
 ```
 
+### 3. 打包应用 (打包为 EXE)
+
+本项目已配置好了 PyInstaller 的打包配置 `ToolX.spec`。如果你需要将其打包成独立的 Windows 可执行文件，可以在虚拟环境下执行以下步骤：
+
+```bash
+# 安装打包工具
+pip install pyinstaller
+
+# 运行打包配置文件
+pyinstaller ToolX.spec
+```
+
+打包完成后，生成的独立 `.exe` 文件将保存在项目根目录下的 `dist` 文件夹内。可以直接双击运行，或者分享给他人使用。
+
 ## 🛠️ 为它开发插件
 
 您可以轻松在本项目上快速构建独属您自己的私有工具集合。详见完整的开发者文档：
