@@ -2,7 +2,7 @@ import os
 import tempfile
 from datetime import datetime
 from PyQt6.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout,
-                             QTextEdit, QPushButton, QLabel, QFileDialog, QMessageBox, QLineEdit)
+                             QPlainTextEdit, QPushButton, QLabel, QFileDialog, QMessageBox, QLineEdit)
 from PyQt6.QtCore import QMimeData, QUrl
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import QApplication
@@ -27,7 +27,7 @@ class QuickCopyWidget(QWidget):
                 font-family: 'Segoe UI', 'Microsoft YaHei';
                 font-size: 14px;
             }
-            QTextEdit {
+            QPlainTextEdit {
                 background-color: #f5f7fa;
                 border: 1px solid #dcdfe6;
                 border-radius: 8px;
@@ -81,7 +81,7 @@ class QuickCopyWidget(QWidget):
         # ====== 左侧：文本处理区 ======
         left_layout = QVBoxLayout()
         left_label = QLabel("📝 文本输入区")
-        self.text_edit = QTextEdit()
+        self.text_edit = QPlainTextEdit()
         self.text_edit.setPlaceholderText("在此输入或粘贴需要发送的长文本...")
 
         btn_layout_left = QHBoxLayout()
@@ -141,7 +141,7 @@ class QuickCopyWidget(QWidget):
 
     def paste_text(self):
         clipboard = QApplication.clipboard()
-        self.text_edit.setText(clipboard.text())
+        self.text_edit.setPlainText(clipboard.text())
 
     def generate_and_copy(self):
         text = self.text_edit.toPlainText()
