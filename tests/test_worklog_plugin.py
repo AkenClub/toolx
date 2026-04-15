@@ -1,8 +1,12 @@
 from plugins.worklog.plugin import (
     DEFAULT_DAY_TOTAL_HOURS,
+    DEFAULT_END_TIME,
+    DEFAULT_START_TIME,
     calculate_duration_hours,
     calculate_percentage,
+    create_task_item,
     ensure_day,
+    get_next_task_time_range,
     load_worklog_data,
     save_worklog_data,
     summarize_day,
@@ -29,6 +33,44 @@ def test_ensure_day_creates_defaults():
 
     assert day["day_total_hours"] == DEFAULT_DAY_TOTAL_HOURS
     assert day["items"] == []
+
+
+def test_create_task_item_uses_first_task_default_time_range():
+    item = create_task_item("2026-04-15")
+
+    assert item["start_time"] == DEFAULT_START_TIME
+    assert item["end_time"] == DEFAULT_END_TIME
+    assert item["duration_hours"] == 0.5
+
+
+def test_get_next_task_time_range_uses_previous_end_time():
+    items = [
+        {
+            "start_time": "08:30",
+            "end_time": "09:45",
+            "task_text": "Task A",
+        }
+    ]
+
+    start_time, end_time = get_next_task_time_range(items)
+
+    assert start_time == "09:45"
+    assert end_time == "10:15"
+
+
+def test_get_next_task_time_range_falls_back_when_last_end_time_invalid():
+    items = [
+        {
+            "start_time": "08:30",
+            "end_time": "bad",
+            "task_text": "Task A",
+        }
+    ]
+
+    start_time, end_time = get_next_task_time_range(items)
+
+    assert start_time == DEFAULT_START_TIME
+    assert end_time == DEFAULT_END_TIME
 
 
 def test_summarize_day_marks_complete():

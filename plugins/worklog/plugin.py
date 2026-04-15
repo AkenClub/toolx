@@ -26,8 +26,9 @@ from core.plugin_interface import PluginInterface
 
 
 DEFAULT_DAY_TOTAL_HOURS = 7.5
-DEFAULT_START_TIME = "09:00"
-DEFAULT_END_TIME = "09:30"
+DEFAULT_START_TIME = "08:30"
+DEFAULT_END_TIME = "09:00"
+DEFAULT_TASK_DURATION_MINUTES = 30
 COMPLETE_TOLERANCE_HOURS = 0.01
 
 
@@ -69,6 +70,19 @@ def create_task_item(date_key, start_time=DEFAULT_START_TIME, end_time=DEFAULT_E
         "task_text": task_text or "",
         "duration_hours": calculate_duration_hours(start_text, end_text),
     }
+
+
+def get_next_task_time_range(items):
+    if not items:
+        return DEFAULT_START_TIME, DEFAULT_END_TIME
+
+    last_item = items[-1] if isinstance(items[-1], dict) else {}
+    start_time = QTime.fromString(str(last_item.get("end_time", "")), "HH:mm")
+    if not start_time.isValid():
+        return DEFAULT_START_TIME, DEFAULT_END_TIME
+
+    end_time = start_time.addSecs(DEFAULT_TASK_DURATION_MINUTES * 60)
+    return start_time.toString("HH:mm"), end_time.toString("HH:mm")
 
 
 def normalize_task_item(item, date_key):
@@ -531,8 +545,9 @@ class WorklogWidget(QWidget):
 
     def add_task_row(self):
         date_key = self.current_date_key()
-        ensure_day(self.data, date_key)
-        item = create_task_item(date_key)
+        day = ensure_day(self.data, date_key)
+        start_time, end_time = get_next_task_time_range(day["items"])
+        item = create_task_item(date_key, start_time, end_time)
         self.insert_table_row(item, self.day_total_spin.value())
         self.persist_current_day()
 
