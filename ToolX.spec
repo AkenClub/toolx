@@ -10,7 +10,8 @@ a = Analysis(
     hiddenimports=[
         'plugins.quick_copy.plugin',
         'plugins.about.plugin',
-        'plugins.settings.plugin'
+        'plugins.settings.plugin',
+        'plugins.worklog.plugin'
     ],
     hookspath=[],
     hooksconfig={},
