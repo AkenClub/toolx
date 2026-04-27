@@ -17,6 +17,14 @@ def test_calculate_duration_hours_returns_hours():
     assert calculate_duration_hours("09:00", "10:30") == 1.5
 
 
+def test_calculate_duration_hours_skips_lunch_break_overlap():
+    assert calculate_duration_hours("11:00", "14:00") == 1.5
+
+
+def test_calculate_duration_hours_lunch_only_range_returns_zero_without_being_invalid():
+    assert calculate_duration_hours("12:15", "13:00") == 0.0
+
+
 def test_invalid_time_range_returns_zero():
     assert calculate_duration_hours("10:00", "10:00") == 0.0
     assert calculate_duration_hours("10:30", "10:00") == 0.0
@@ -58,6 +66,36 @@ def test_get_next_task_time_range_uses_previous_end_time():
     assert end_time == "10:15"
 
 
+def test_get_next_task_time_range_skips_lunch_break_for_afternoon_task():
+    items = [
+        {
+            "start_time": "11:00",
+            "end_time": "12:00",
+            "task_text": "Morning Task",
+        }
+    ]
+
+    start_time, end_time = get_next_task_time_range(items)
+
+    assert start_time == "13:30"
+    assert end_time == "14:00"
+
+
+def test_get_next_task_time_range_keeps_default_work_minutes_when_crossing_lunch():
+    items = [
+        {
+            "start_time": "10:30",
+            "end_time": "11:50",
+            "task_text": "Task A",
+        }
+    ]
+
+    start_time, end_time = get_next_task_time_range(items)
+
+    assert start_time == "11:50"
+    assert end_time == "13:50"
+
+
 def test_get_next_task_time_range_falls_back_when_last_end_time_invalid():
     items = [
         {
@@ -75,8 +113,8 @@ def test_get_next_task_time_range_falls_back_when_last_end_time_invalid():
 
 def test_summarize_day_marks_complete():
     items = [
-        {"start_time": "09:00", "end_time": "12:45", "duration_hours": 3.75},
-        {"start_time": "13:30", "end_time": "17:15", "duration_hours": 3.75},
+        {"start_time": "08:30", "end_time": "12:00", "duration_hours": 3.5},
+        {"start_time": "13:30", "end_time": "17:30", "duration_hours": 4.0},
     ]
 
     summary = summarize_day(items, 7.5)
@@ -96,6 +134,19 @@ def test_summarize_day_flags_invalid_rows():
 
     assert summary["invalid_count"] == 1
     assert summary["status"] == "未满 100%"
+
+
+def test_summarize_day_reports_skipped_lunch_break():
+    items = [
+        {"start_time": "11:00", "end_time": "14:00", "duration_hours": 1.5},
+    ]
+
+    summary = summarize_day(items, 1.5)
+
+    assert summary["total_hours"] == 1.5
+    assert summary["lunch_break_hours"] == 1.5
+    assert summary["lunch_break_applied_count"] == 1
+    assert summary["invalid_count"] == 0
 
 
 def test_load_corrupted_json_recovers_empty(tmp_path):

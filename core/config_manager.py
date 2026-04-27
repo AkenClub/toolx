@@ -20,7 +20,11 @@ class ConfigManager:
         return {
             "window_size": [900, 600],
             "pinned_plugins": ["quick_copy"],
-            "theme": "light"
+            "theme": "light",
+            "worklog_lunch_break": {
+                "start_time": "12:00",
+                "end_time": "13:30"
+            }
         }
 
     def save_config(self):

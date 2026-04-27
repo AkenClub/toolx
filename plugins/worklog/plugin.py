@@ -30,6 +30,9 @@ DEFAULT_START_TIME = "08:30"
 DEFAULT_END_TIME = "09:00"
 DEFAULT_TASK_DURATION_MINUTES = 30
 COMPLETE_TOLERANCE_HOURS = 0.01
+DEFAULT_LUNCH_BREAK_START_TIME = "12:00"
+DEFAULT_LUNCH_BREAK_END_TIME = "13:30"
+LUNCH_BREAK_CONFIG_KEY = "worklog_lunch_break"
 
 
 def get_worklog_data_file():
@@ -59,7 +62,143 @@ def parse_time_text(time_text, fallback_text):
     return fallback_text
 
 
-def create_task_item(date_key, start_time=DEFAULT_START_TIME, end_time=DEFAULT_END_TIME, task_text=""):
+def parse_time_value(time_text):
+    parsed_time = QTime.fromString(str(time_text), "HH:mm")
+    if parsed_time.isValid():
+        return parsed_time
+    return None
+
+
+def time_to_seconds(time_value):
+    return (time_value.hour() * 3600) + (time_value.minute() * 60) + time_value.second()
+
+
+def get_lunch_break_settings(config_manager=None):
+    raw_settings = {}
+    if config_manager is not None:
+        raw_settings = config_manager.get(LUNCH_BREAK_CONFIG_KEY, {})
+
+    if not isinstance(raw_settings, dict):
+        raw_settings = {}
+
+    start_text = parse_time_text(raw_settings.get("start_time"), DEFAULT_LUNCH_BREAK_START_TIME)
+    end_text = parse_time_text(raw_settings.get("end_time"), DEFAULT_LUNCH_BREAK_END_TIME)
+    start_time = parse_time_value(start_text)
+    end_time = parse_time_value(end_text)
+
+    return {
+        "start_time": start_text,
+        "end_time": end_text,
+        "is_valid": bool(start_time and end_time and end_time > start_time),
+    }
+
+
+def is_valid_lunch_break(lunch_start_text, lunch_end_text):
+    lunch_start_time = parse_time_value(lunch_start_text)
+    lunch_end_time = parse_time_value(lunch_end_text)
+    return bool(lunch_start_time and lunch_end_time and lunch_end_time > lunch_start_time)
+
+
+def calculate_lunch_break_overlap_seconds(start_time, end_time, lunch_start_text, lunch_end_text):
+    lunch_start_time = parse_time_value(lunch_start_text)
+    lunch_end_time = parse_time_value(lunch_end_text)
+    if not lunch_start_time or not lunch_end_time or lunch_end_time <= lunch_start_time:
+        return 0
+
+    start_seconds = time_to_seconds(start_time)
+    end_seconds = time_to_seconds(end_time)
+    lunch_start_seconds = time_to_seconds(lunch_start_time)
+    lunch_end_seconds = time_to_seconds(lunch_end_time)
+
+    overlap_start = max(start_seconds, lunch_start_seconds)
+    overlap_end = min(end_seconds, lunch_end_seconds)
+    return max(0, overlap_end - overlap_start)
+
+
+def calculate_duration_details(
+    start_text,
+    end_text,
+    lunch_start_text=DEFAULT_LUNCH_BREAK_START_TIME,
+    lunch_end_text=DEFAULT_LUNCH_BREAK_END_TIME,
+):
+    start_time = parse_time_value(start_text)
+    end_time = parse_time_value(end_text)
+    lunch_settings_valid = is_valid_lunch_break(lunch_start_text, lunch_end_text)
+
+    if not start_time or not end_time or end_time <= start_time:
+        return {
+            "is_valid_range": False,
+            "raw_hours": 0.0,
+            "lunch_break_hours": 0.0,
+            "duration_hours": 0.0,
+            "lunch_break_applied": False,
+            "lunch_break_valid": lunch_settings_valid,
+        }
+
+    raw_seconds = start_time.secsTo(end_time)
+    lunch_break_seconds = calculate_lunch_break_overlap_seconds(
+        start_time,
+        end_time,
+        lunch_start_text,
+        lunch_end_text,
+    )
+    duration_seconds = max(0, raw_seconds - lunch_break_seconds)
+
+    return {
+        "is_valid_range": True,
+        "raw_hours": round(raw_seconds / 3600.0, 2),
+        "lunch_break_hours": round(lunch_break_seconds / 3600.0, 2),
+        "duration_hours": round(duration_seconds / 3600.0, 2),
+        "lunch_break_applied": lunch_break_seconds > 0,
+        "lunch_break_valid": lunch_settings_valid,
+    }
+
+
+def adjust_time_for_lunch_break(time_text, lunch_start_text, lunch_end_text):
+    current_time = parse_time_value(time_text)
+    lunch_start_time = parse_time_value(lunch_start_text)
+    lunch_end_time = parse_time_value(lunch_end_text)
+    if not current_time or not lunch_start_time or not lunch_end_time or lunch_end_time <= lunch_start_time:
+        return time_text
+
+    if lunch_start_time <= current_time < lunch_end_time:
+        return lunch_end_time.toString("HH:mm")
+    return current_time.toString("HH:mm")
+
+
+def add_work_minutes(start_text, minutes, lunch_start_text, lunch_end_text):
+    start_time = parse_time_value(start_text)
+    lunch_start_time = parse_time_value(lunch_start_text)
+    lunch_end_time = parse_time_value(lunch_end_text)
+    if not start_time:
+        return DEFAULT_END_TIME
+
+    current_time = parse_time_value(adjust_time_for_lunch_break(start_text, lunch_start_text, lunch_end_text))
+    if not current_time:
+        return DEFAULT_END_TIME
+
+    if not lunch_start_time or not lunch_end_time or lunch_end_time <= lunch_start_time:
+        return current_time.addSecs(minutes * 60).toString("HH:mm")
+
+    remaining_seconds = minutes * 60
+    if current_time < lunch_start_time:
+        seconds_before_lunch = current_time.secsTo(lunch_start_time)
+        if remaining_seconds <= seconds_before_lunch:
+            return current_time.addSecs(remaining_seconds).toString("HH:mm")
+        remaining_seconds -= seconds_before_lunch
+        current_time = lunch_end_time
+
+    return current_time.addSecs(remaining_seconds).toString("HH:mm")
+
+
+def create_task_item(
+    date_key,
+    start_time=DEFAULT_START_TIME,
+    end_time=DEFAULT_END_TIME,
+    task_text="",
+    lunch_start_text=DEFAULT_LUNCH_BREAK_START_TIME,
+    lunch_end_text=DEFAULT_LUNCH_BREAK_END_TIME,
+):
     start_text = parse_time_text(start_time, DEFAULT_START_TIME)
     end_text = parse_time_text(end_time, DEFAULT_END_TIME)
     return {
@@ -68,24 +207,48 @@ def create_task_item(date_key, start_time=DEFAULT_START_TIME, end_time=DEFAULT_E
         "start_time": start_text,
         "end_time": end_text,
         "task_text": task_text or "",
-        "duration_hours": calculate_duration_hours(start_text, end_text),
+        "duration_hours": calculate_duration_hours(
+            start_text,
+            end_text,
+            lunch_start_text,
+            lunch_end_text,
+        ),
     }
 
 
-def get_next_task_time_range(items):
+def get_next_task_time_range(
+    items,
+    lunch_start_text=DEFAULT_LUNCH_BREAK_START_TIME,
+    lunch_end_text=DEFAULT_LUNCH_BREAK_END_TIME,
+):
     if not items:
         return DEFAULT_START_TIME, DEFAULT_END_TIME
 
     last_item = items[-1] if isinstance(items[-1], dict) else {}
-    start_time = QTime.fromString(str(last_item.get("end_time", "")), "HH:mm")
-    if not start_time.isValid():
+    start_time = parse_time_value(last_item.get("end_time", ""))
+    if start_time is None:
         return DEFAULT_START_TIME, DEFAULT_END_TIME
 
-    end_time = start_time.addSecs(DEFAULT_TASK_DURATION_MINUTES * 60)
-    return start_time.toString("HH:mm"), end_time.toString("HH:mm")
+    start_text = adjust_time_for_lunch_break(
+        start_time.toString("HH:mm"),
+        lunch_start_text,
+        lunch_end_text,
+    )
+    end_text = add_work_minutes(
+        start_text,
+        DEFAULT_TASK_DURATION_MINUTES,
+        lunch_start_text,
+        lunch_end_text,
+    )
+    return start_text, end_text
 
 
-def normalize_task_item(item, date_key):
+def normalize_task_item(
+    item,
+    date_key,
+    lunch_start_text=DEFAULT_LUNCH_BREAK_START_TIME,
+    lunch_end_text=DEFAULT_LUNCH_BREAK_END_TIME,
+):
     if not isinstance(item, dict):
         item = {}
 
@@ -98,11 +261,21 @@ def normalize_task_item(item, date_key):
         "start_time": start_text,
         "end_time": end_text,
         "task_text": str(item.get("task_text") or ""),
-        "duration_hours": calculate_duration_hours(start_text, end_text),
+        "duration_hours": calculate_duration_hours(
+            start_text,
+            end_text,
+            lunch_start_text,
+            lunch_end_text,
+        ),
     }
 
 
-def ensure_day(data, date_key):
+def ensure_day(
+    data,
+    date_key,
+    lunch_start_text=DEFAULT_LUNCH_BREAK_START_TIME,
+    lunch_end_text=DEFAULT_LUNCH_BREAK_END_TIME,
+):
     normalized = ensure_data_shape(data)
     data.clear()
     data.update(normalized)
@@ -121,7 +294,10 @@ def ensure_day(data, date_key):
     if not isinstance(raw_items, list):
         raw_items = []
 
-    items = [normalize_task_item(item, date_key) for item in raw_items]
+    items = [
+        normalize_task_item(item, date_key, lunch_start_text, lunch_end_text)
+        for item in raw_items
+    ]
 
     normalized_day = {
         "day_total_hours": day_total_hours,
@@ -131,12 +307,18 @@ def ensure_day(data, date_key):
     return normalized_day
 
 
-def calculate_duration_hours(start_text, end_text):
-    start_time = QTime.fromString(str(start_text), "HH:mm")
-    end_time = QTime.fromString(str(end_text), "HH:mm")
-    if not start_time.isValid() or not end_time.isValid() or end_time <= start_time:
-        return 0.0
-    return round(start_time.secsTo(end_time) / 3600.0, 2)
+def calculate_duration_hours(
+    start_text,
+    end_text,
+    lunch_start_text=DEFAULT_LUNCH_BREAK_START_TIME,
+    lunch_end_text=DEFAULT_LUNCH_BREAK_END_TIME,
+):
+    return calculate_duration_details(
+        start_text,
+        end_text,
+        lunch_start_text,
+        lunch_end_text,
+    )["duration_hours"]
 
 
 def calculate_percentage(duration_hours, day_total_hours):
@@ -150,12 +332,33 @@ def calculate_percentage(duration_hours, day_total_hours):
     return round((float(duration_hours) / total_hours) * 100, 2)
 
 
-def summarize_day(items, day_total_hours):
-    total_hours = round(sum(float(item.get("duration_hours", 0.0)) for item in items), 2)
+def summarize_day(
+    items,
+    day_total_hours,
+    lunch_start_text=DEFAULT_LUNCH_BREAK_START_TIME,
+    lunch_end_text=DEFAULT_LUNCH_BREAK_END_TIME,
+):
+    detail_rows = [
+        calculate_duration_details(
+            item.get("start_time", ""),
+            item.get("end_time", ""),
+            lunch_start_text,
+            lunch_end_text,
+        )
+        for item in items
+    ]
+    total_hours = round(sum(detail["duration_hours"] for detail in detail_rows), 2)
     invalid_count = sum(
         1
-        for item in items
-        if calculate_duration_hours(item.get("start_time", ""), item.get("end_time", "")) <= 0
+        for detail in detail_rows
+        if not detail["is_valid_range"]
+    )
+    lunch_break_hours = round(sum(detail["lunch_break_hours"] for detail in detail_rows), 2)
+    lunch_break_applied_count = sum(1 for detail in detail_rows if detail["lunch_break_applied"])
+    lunch_break_valid = (
+        all(detail["lunch_break_valid"] for detail in detail_rows)
+        if detail_rows
+        else is_valid_lunch_break(lunch_start_text, lunch_end_text)
     )
 
     try:
@@ -171,6 +374,9 @@ def summarize_day(items, day_total_hours):
             "status": "标准工时无效",
             "color": "#e6a23c",
             "invalid_count": invalid_count,
+            "lunch_break_hours": lunch_break_hours,
+            "lunch_break_applied_count": lunch_break_applied_count,
+            "lunch_break_valid": lunch_break_valid,
         }
 
     difference_hours = round(total_hours - target_hours, 2)
@@ -193,6 +399,9 @@ def summarize_day(items, day_total_hours):
         "status": status,
         "color": color,
         "invalid_count": invalid_count,
+        "lunch_break_hours": lunch_break_hours,
+        "lunch_break_applied_count": lunch_break_applied_count,
+        "lunch_break_valid": lunch_break_valid,
     }
 
 
@@ -222,8 +431,9 @@ def save_worklog_data(data_file, data):
 
 
 class WorklogWidget(QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, config_manager=None, parent=None):
         super().__init__(parent)
+        self.config_manager = config_manager
         self.data_file = get_worklog_data_file()
         self.data, self.had_corrupted_data = load_worklog_data(self.data_file)
         self.is_loading = False
@@ -310,7 +520,7 @@ class WorklogWidget(QWidget):
 
         title_label = QLabel("🕒 每日任务工时")
         title_label.setObjectName("Title")
-        caption_label = QLabel("按天记录任务、精确时间范围，并实时保存到本地。")
+        caption_label = QLabel("按天记录任务、精确时间范围，午休时间会自动跳过并实时保存到本地。")
         caption_label.setObjectName("Caption")
 
         toolbar = QFrame()
@@ -335,6 +545,19 @@ class WorklogWidget(QWidget):
         self.day_total_spin.setValue(DEFAULT_DAY_TOTAL_HOURS)
         self.day_total_spin.valueChanged.connect(self.on_day_total_changed)
 
+        lunch_settings = self.get_active_lunch_break_settings()
+        lunch_label = QLabel("全局午休")
+        self.lunch_start_edit = self.create_time_edit(
+            lunch_settings["start_time"],
+            DEFAULT_LUNCH_BREAK_START_TIME,
+        )
+        self.lunch_end_edit = self.create_time_edit(
+            lunch_settings["end_time"],
+            DEFAULT_LUNCH_BREAK_END_TIME,
+        )
+        self.lunch_start_edit.timeChanged.connect(self.on_lunch_break_changed)
+        self.lunch_end_edit.timeChanged.connect(self.on_lunch_break_changed)
+
         self.add_row_button = QPushButton("新增任务")
         self.add_row_button.clicked.connect(self.add_task_row)
 
@@ -343,11 +566,16 @@ class WorklogWidget(QWidget):
         toolbar_layout.addSpacing(8)
         toolbar_layout.addWidget(total_label)
         toolbar_layout.addWidget(self.day_total_spin)
+        toolbar_layout.addSpacing(8)
+        toolbar_layout.addWidget(lunch_label)
+        toolbar_layout.addWidget(self.lunch_start_edit)
+        toolbar_layout.addWidget(QLabel("至"))
+        toolbar_layout.addWidget(self.lunch_end_edit)
         toolbar_layout.addStretch()
         toolbar_layout.addWidget(self.add_row_button)
 
         self.table = QTableWidget(0, 6)
-        self.table.setHorizontalHeaderLabels(["开始时间", "结束时间", "工时", "占比", "任务内容", "操作"])
+        self.table.setHorizontalHeaderLabels(["开始时间", "结束时间", "工时（扣午休）", "占比", "任务内容", "操作"])
         self.table.verticalHeader().setVisible(False)
         self.table.setAlternatingRowColors(True)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
@@ -386,10 +614,56 @@ class WorklogWidget(QWidget):
     def current_date_key(self):
         return self.date_edit.date().toString("yyyy-MM-dd")
 
+    def get_active_lunch_break_settings(self):
+        if hasattr(self, "lunch_start_edit") and hasattr(self, "lunch_end_edit"):
+            start_text = self.lunch_start_edit.time().toString("HH:mm")
+            end_text = self.lunch_end_edit.time().toString("HH:mm")
+            return {
+                "start_time": start_text,
+                "end_time": end_text,
+                "is_valid": bool(
+                    parse_time_value(start_text)
+                    and parse_time_value(end_text)
+                    and parse_time_value(end_text) > parse_time_value(start_text)
+                ),
+            }
+
+        return get_lunch_break_settings(self.config_manager)
+
+    def save_lunch_break_settings(self):
+        if self.config_manager is None:
+            return
+
+        lunch_settings = self.get_active_lunch_break_settings()
+        self.config_manager.set(
+            LUNCH_BREAK_CONFIG_KEY,
+            {
+                "start_time": lunch_settings["start_time"],
+                "end_time": lunch_settings["end_time"],
+            },
+        )
+
+    def recalculate_all_days(self):
+        lunch_settings = self.get_active_lunch_break_settings()
+        for date_key in list(self.data.get("days", {}).keys()):
+            ensure_day(
+                self.data,
+                date_key,
+                lunch_settings["start_time"],
+                lunch_settings["end_time"],
+            )
+        self.save_data()
+
     def load_current_date(self):
         self.is_loading = True
         date_key = self.current_date_key()
-        day = ensure_day(self.data, date_key)
+        lunch_settings = self.get_active_lunch_break_settings()
+        day = ensure_day(
+            self.data,
+            date_key,
+            lunch_settings["start_time"],
+            lunch_settings["end_time"],
+        )
 
         self.day_total_spin.blockSignals(True)
         self.day_total_spin.setValue(day["day_total_hours"])
@@ -436,19 +710,26 @@ class WorklogWidget(QWidget):
 
         self.update_display_row(row, item, day_total_hours)
 
-    def create_time_edit(self, time_text):
+    def create_time_edit(self, time_text, fallback_text=DEFAULT_START_TIME):
         time_edit = QTimeEdit()
         time_edit.setDisplayFormat("HH:mm")
-        time_edit.setTime(QTime.fromString(parse_time_text(time_text, DEFAULT_START_TIME), "HH:mm"))
+        time_edit.setTime(QTime.fromString(parse_time_text(time_text, fallback_text), "HH:mm"))
         time_edit.setKeyboardTracking(False)
         return time_edit
 
     def update_display_row(self, row, item, day_total_hours):
         start_text = item["start_time"]
         end_text = item["end_time"]
-        duration_hours = calculate_duration_hours(start_text, end_text)
+        lunch_settings = self.get_active_lunch_break_settings()
+        duration_details = calculate_duration_details(
+            start_text,
+            end_text,
+            lunch_settings["start_time"],
+            lunch_settings["end_time"],
+        )
+        duration_hours = duration_details["duration_hours"]
         percentage = calculate_percentage(duration_hours, day_total_hours)
-        is_valid_range = duration_hours > 0
+        is_valid_range = duration_details["is_valid_range"]
 
         duration_item = self.table.item(row, 2)
         percentage_item = self.table.item(row, 3)
@@ -462,8 +743,17 @@ class WorklogWidget(QWidget):
             percentage_item.setForeground(Qt.GlobalColor.black)
             start_edit.setStyleSheet("")
             end_edit.setStyleSheet("")
-            duration_item.setToolTip("")
-            percentage_item.setToolTip("")
+            if duration_details["lunch_break_applied"]:
+                tooltip = (
+                    f"原始时长 {duration_details['raw_hours']:.2f} 小时，"
+                    f"已跳过午休 {duration_details['lunch_break_hours']:.2f} 小时，"
+                    f"计入 {duration_hours:.2f} 小时。"
+                )
+                duration_item.setToolTip(tooltip)
+                percentage_item.setToolTip(tooltip)
+            else:
+                duration_item.setToolTip("")
+                percentage_item.setToolTip("")
         else:
             duration_item.setText("无效")
             percentage_item.setText("0.00%")
@@ -480,6 +770,7 @@ class WorklogWidget(QWidget):
         date_key = self.current_date_key()
         items = []
         day_total_hours = round(float(self.day_total_spin.value()), 2)
+        lunch_settings = self.get_active_lunch_break_settings()
 
         for row in range(self.table.rowCount()):
             start_edit = self.table.cellWidget(row, 0)
@@ -493,7 +784,12 @@ class WorklogWidget(QWidget):
                 "end_time": end_edit.time().toString("HH:mm"),
                 "task_text": task_edit.text(),
             }
-            item["duration_hours"] = calculate_duration_hours(item["start_time"], item["end_time"])
+            item["duration_hours"] = calculate_duration_hours(
+                item["start_time"],
+                item["end_time"],
+                lunch_settings["start_time"],
+                lunch_settings["end_time"],
+            )
             items.append(item)
             self.update_display_row(row, item, day_total_hours)
 
@@ -504,7 +800,13 @@ class WorklogWidget(QWidget):
             return
 
         date_key = self.current_date_key()
-        day = ensure_day(self.data, date_key)
+        lunch_settings = self.get_active_lunch_break_settings()
+        day = ensure_day(
+            self.data,
+            date_key,
+            lunch_settings["start_time"],
+            lunch_settings["end_time"],
+        )
         day["day_total_hours"] = round(float(self.day_total_spin.value()), 2)
         day["items"] = self.build_items_from_table()
         self.refresh_summary()
@@ -518,8 +820,19 @@ class WorklogWidget(QWidget):
 
     def refresh_summary(self):
         date_key = self.current_date_key()
-        day = ensure_day(self.data, date_key)
-        summary = summarize_day(day["items"], day["day_total_hours"])
+        lunch_settings = self.get_active_lunch_break_settings()
+        day = ensure_day(
+            self.data,
+            date_key,
+            lunch_settings["start_time"],
+            lunch_settings["end_time"],
+        )
+        summary = summarize_day(
+            day["items"],
+            day["day_total_hours"],
+            lunch_settings["start_time"],
+            lunch_settings["end_time"],
+        )
 
         summary_lines = [
             f"标准工时：<b>{day['day_total_hours']:.2f}</b> 小时",
@@ -528,6 +841,20 @@ class WorklogWidget(QWidget):
             f"差值：<b>{summary['difference_hours']:.2f}</b> 小时",
             f"状态：<b style='color:{summary['color']};'>{summary['status']}</b>",
         ]
+
+        if summary["lunch_break_valid"]:
+            summary_lines.insert(
+                1,
+                f"全局午休：<b>{lunch_settings['start_time']}</b> - <b>{lunch_settings['end_time']}</b>",
+            )
+            if summary["lunch_break_applied_count"] > 0:
+                summary_lines.append(
+                    f"<span style='color:#409eff;'>已自动跳过午休 {summary['lunch_break_hours']:.2f} 小时，涉及 {summary['lunch_break_applied_count']} 条记录。</span>"
+                )
+        else:
+            summary_lines.append(
+                "<span style='color:#e6a23c;'>当前午休设置无效，系统暂不扣减午休时间。请确保结束时间晚于开始时间。</span>"
+            )
 
         if summary["invalid_count"] > 0:
             summary_lines.append(
@@ -545,9 +872,25 @@ class WorklogWidget(QWidget):
 
     def add_task_row(self):
         date_key = self.current_date_key()
-        day = ensure_day(self.data, date_key)
-        start_time, end_time = get_next_task_time_range(day["items"])
-        item = create_task_item(date_key, start_time, end_time)
+        lunch_settings = self.get_active_lunch_break_settings()
+        day = ensure_day(
+            self.data,
+            date_key,
+            lunch_settings["start_time"],
+            lunch_settings["end_time"],
+        )
+        start_time, end_time = get_next_task_time_range(
+            day["items"],
+            lunch_settings["start_time"],
+            lunch_settings["end_time"],
+        )
+        item = create_task_item(
+            date_key,
+            start_time,
+            end_time,
+            lunch_start_text=lunch_settings["start_time"],
+            lunch_end_text=lunch_settings["end_time"],
+        )
         self.insert_table_row(item, self.day_total_spin.value())
         self.persist_current_day()
 
@@ -555,7 +898,13 @@ class WorklogWidget(QWidget):
         date_key = self.current_date_key()
         self.persist_current_day()
 
-        day = ensure_day(self.data, date_key)
+        lunch_settings = self.get_active_lunch_break_settings()
+        day = ensure_day(
+            self.data,
+            date_key,
+            lunch_settings["start_time"],
+            lunch_settings["end_time"],
+        )
         day["items"] = [item for item in day["items"] if item.get("id") != item_id]
         self.save_data()
         self.load_current_date()
@@ -565,6 +914,13 @@ class WorklogWidget(QWidget):
 
     def on_day_total_changed(self, _value):
         self.persist_current_day()
+
+    def on_lunch_break_changed(self, _time):
+        if self.is_loading:
+            return
+        self.save_lunch_break_settings()
+        self.recalculate_all_days()
+        self.load_current_date()
 
     def on_date_changed(self, _date):
         if self.is_loading:
@@ -588,7 +944,7 @@ class WorklogPlugin(PluginInterface):
 
     def get_widget(self, parent: QWidget) -> QWidget:
         if self.widget is None:
-            self.widget = WorklogWidget(parent)
+            self.widget = WorklogWidget(self.config_manager, parent)
         return self.widget
 
 
