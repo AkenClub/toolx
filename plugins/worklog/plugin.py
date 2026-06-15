@@ -41,9 +41,29 @@ REFRESH_SVG = b"""<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/
 <path d="M12 4V1L8 5L12 9V6C15.31 6 18 8.69 18 12C18 15.31 15.31 18 12 18C8.69 18 6 15.31 6 12H4C4 16.42 7.58 20 12 20C16.42 20 20 16.42 20 12C20 7.58 16.42 4 12 4Z" fill="#606266"/>
 </svg>"""
 
+LEFT_ARROW_SVG = b"""<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M15.41 7.41L14 6L8 12L14 18L15.41 16.59L10.83 12L15.41 7.41Z" fill="#606266"/>
+</svg>"""
+
+RIGHT_ARROW_SVG = b"""<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M10 6L8.59 7.41L13.17 12L8.59 16.59L10 18L16 12L10 6Z" fill="#606266"/>
+</svg>"""
+
 def get_refresh_icon():
     pixmap = QPixmap()
     pixmap.loadFromData(REFRESH_SVG, "SVG")
+    return QIcon(pixmap)
+
+
+def get_left_arrow_icon():
+    pixmap = QPixmap()
+    pixmap.loadFromData(LEFT_ARROW_SVG, "SVG")
+    return QIcon(pixmap)
+
+
+def get_right_arrow_icon():
+    pixmap = QPixmap()
+    pixmap.loadFromData(RIGHT_ARROW_SVG, "SVG")
     return QIcon(pixmap)
 
 
@@ -560,11 +580,67 @@ class WorklogWidget(QWidget):
         toolbar_layout.setSpacing(12)
 
         date_label = QLabel("日期")
+        
+        # 左右切换日期按钮及输入框布局
+        date_layout = QHBoxLayout()
+        date_layout.setSpacing(4)
+        date_layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.prev_date_btn = QPushButton()
+        self.prev_date_btn.setIcon(get_left_arrow_icon())
+        self.prev_date_btn.setIconSize(QSize(16, 16))
+        self.prev_date_btn.setFixedSize(30, 30)
+        self.prev_date_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.prev_date_btn.setToolTip("前一天")
+        self.prev_date_btn.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                border: 1px solid #dcdfe6;
+                border-radius: 6px;
+                padding: 0px;
+            }
+            QPushButton:hover {
+                background-color: #f5f7fa;
+                border-color: #c0c4cc;
+            }
+            QPushButton:pressed {
+                background-color: #e4e7ed;
+            }
+        """)
+        self.prev_date_btn.clicked.connect(self.on_prev_date_clicked)
+
         self.date_edit = QDateEdit()
         self.date_edit.setCalendarPopup(True)
         self.date_edit.setDisplayFormat("yyyy-MM-dd")
         self.date_edit.setDate(QDate.currentDate())
         self.date_edit.dateChanged.connect(self.on_date_changed)
+        
+        self.next_date_btn = QPushButton()
+        self.next_date_btn.setIcon(get_right_arrow_icon())
+        self.next_date_btn.setIconSize(QSize(16, 16))
+        self.next_date_btn.setFixedSize(30, 30)
+        self.next_date_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.next_date_btn.setToolTip("后一天")
+        self.next_date_btn.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                border: 1px solid #dcdfe6;
+                border-radius: 6px;
+                padding: 0px;
+            }
+            QPushButton:hover {
+                background-color: #f5f7fa;
+                border-color: #c0c4cc;
+            }
+            QPushButton:pressed {
+                background-color: #e4e7ed;
+            }
+        """)
+        self.next_date_btn.clicked.connect(self.on_next_date_clicked)
+        
+        date_layout.addWidget(self.prev_date_btn)
+        date_layout.addWidget(self.date_edit)
+        date_layout.addWidget(self.next_date_btn)
 
         total_label = QLabel("当天标准工时")
         self.day_total_spin = QDoubleSpinBox()
@@ -592,7 +668,7 @@ class WorklogWidget(QWidget):
         self.add_row_button.clicked.connect(self.add_task_row)
 
         toolbar_layout.addWidget(date_label)
-        toolbar_layout.addWidget(self.date_edit)
+        toolbar_layout.addLayout(date_layout)
         toolbar_layout.addSpacing(8)
         toolbar_layout.addWidget(total_label)
         toolbar_layout.addWidget(self.day_total_spin)
@@ -1058,6 +1134,12 @@ class WorklogWidget(QWidget):
         if self.is_loading:
             return
         self.load_current_date()
+
+    def on_prev_date_clicked(self):
+        self.date_edit.setDate(self.date_edit.date().addDays(-1))
+
+    def on_next_date_clicked(self):
+        self.date_edit.setDate(self.date_edit.date().addDays(1))
 
 
 class WorklogPlugin(PluginInterface):
