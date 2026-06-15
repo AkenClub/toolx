@@ -3,9 +3,11 @@ import os
 import sys
 import uuid
 
-from PyQt6.QtCore import QDate, Qt, QTime
+from PyQt6.QtCore import QDate, Qt, QTime, QSize
+from PyQt6.QtGui import QIcon, QPixmap
 from PyQt6.QtWidgets import (
     QAbstractItemView,
+    QCheckBox,
     QDateEdit,
     QDoubleSpinBox,
     QFrame,
@@ -33,6 +35,16 @@ COMPLETE_TOLERANCE_HOURS = 0.01
 DEFAULT_LUNCH_BREAK_START_TIME = "12:00"
 DEFAULT_LUNCH_BREAK_END_TIME = "13:30"
 LUNCH_BREAK_CONFIG_KEY = "worklog_lunch_break"
+
+
+REFRESH_SVG = b"""<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M12 4V1L8 5L12 9V6C15.31 6 18 8.69 18 12C18 15.31 15.31 18 12 18C8.69 18 6 15.31 6 12H4C4 16.42 7.58 20 12 20C16.42 20 20 16.42 20 12C20 7.58 16.42 4 12 4Z" fill="#606266"/>
+</svg>"""
+
+def get_refresh_icon():
+    pixmap = QPixmap()
+    pixmap.loadFromData(REFRESH_SVG, "SVG")
+    return QIcon(pixmap)
 
 
 def get_worklog_data_file():
@@ -207,6 +219,8 @@ def create_task_item(
         "start_time": start_text,
         "end_time": end_text,
         "task_text": task_text or "",
+        "is_registered": False,
+        "custom_duration_hours": None,
         "duration_hours": calculate_duration_hours(
             start_text,
             end_text,
@@ -255,18 +269,29 @@ def normalize_task_item(
     start_text = parse_time_text(item.get("start_time"), DEFAULT_START_TIME)
     end_text = parse_time_text(item.get("end_time"), DEFAULT_END_TIME)
 
+    custom_duration_hours = item.get("custom_duration_hours")
+    if custom_duration_hours is not None:
+        try:
+            custom_duration_hours = round(float(custom_duration_hours), 2)
+        except (TypeError, ValueError):
+            custom_duration_hours = None
+
+    auto_duration = calculate_duration_hours(
+        start_text,
+        end_text,
+        lunch_start_text,
+        lunch_end_text,
+    )
+
     return {
         "id": str(item.get("id") or uuid.uuid4()),
         "date": date_key,
         "start_time": start_text,
         "end_time": end_text,
         "task_text": str(item.get("task_text") or ""),
-        "duration_hours": calculate_duration_hours(
-            start_text,
-            end_text,
-            lunch_start_text,
-            lunch_end_text,
-        ),
+        "is_registered": bool(item.get("is_registered")),
+        "custom_duration_hours": custom_duration_hours,
+        "duration_hours": custom_duration_hours if custom_duration_hours is not None else auto_duration,
     }
 
 
@@ -338,15 +363,20 @@ def summarize_day(
     lunch_start_text=DEFAULT_LUNCH_BREAK_START_TIME,
     lunch_end_text=DEFAULT_LUNCH_BREAK_END_TIME,
 ):
-    detail_rows = [
-        calculate_duration_details(
+    detail_rows = []
+    for item in items:
+        detail = calculate_duration_details(
             item.get("start_time", ""),
             item.get("end_time", ""),
             lunch_start_text,
             lunch_end_text,
         )
-        for item in items
-    ]
+        custom_duration = item.get("custom_duration_hours")
+        if custom_duration is not None:
+            detail["duration_hours"] = custom_duration
+            detail["is_valid_range"] = True
+        detail_rows.append(detail)
+        
     total_hours = round(sum(detail["duration_hours"] for detail in detail_rows), 2)
     invalid_count = sum(
         1
@@ -574,9 +604,10 @@ class WorklogWidget(QWidget):
         toolbar_layout.addStretch()
         toolbar_layout.addWidget(self.add_row_button)
 
-        self.table = QTableWidget(0, 6)
-        self.table.setHorizontalHeaderLabels(["开始时间", "结束时间", "工时（扣午休）", "占比", "任务内容", "操作"])
+        self.table = QTableWidget(0, 7)
+        self.table.setHorizontalHeaderLabels(["开始时间", "结束时间", "工时（扣午休）", "占比", "已登记", "任务内容", "操作"])
         self.table.verticalHeader().setVisible(False)
+        self.table.verticalHeader().setDefaultSectionSize(40)
         self.table.setAlternatingRowColors(True)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
         self.table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -586,9 +617,10 @@ class WorklogWidget(QWidget):
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
-        self.table.setColumnWidth(4, 320)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
+        self.table.setColumnWidth(5, 320)
 
         self.summary_card = QFrame()
         self.summary_card.setObjectName("SummaryCard")
@@ -689,24 +721,58 @@ class WorklogWidget(QWidget):
         task_edit.setProperty("item_id", item["id"])
         delete_button.setProperty("item_id", item["id"])
 
-        start_edit.timeChanged.connect(self.on_table_input_changed)
-        end_edit.timeChanged.connect(self.on_table_input_changed)
-        task_edit.textChanged.connect(self.on_table_input_changed)
+        start_edit.editingFinished.connect(self.on_table_input_changed)
+        end_edit.editingFinished.connect(self.on_table_input_changed)
+        task_edit.editingFinished.connect(self.on_table_input_changed)
         delete_button.clicked.connect(lambda _, item_id=item["id"]: self.delete_task_row(item_id))
 
-        duration_item = QTableWidgetItem()
+        duration_widget = QWidget()
+        duration_layout = QHBoxLayout(duration_widget)
+        duration_layout.setContentsMargins(4, 2, 4, 2)
+        duration_layout.setSpacing(4)
+        
+        duration_spin = QDoubleSpinBox()
+        duration_spin.setRange(0.0, 24.0)
+        duration_spin.setDecimals(2)
+        duration_spin.setSuffix(" h")
+        duration_spin.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
+        duration_spin.setKeyboardTracking(False)
+        duration_spin.setProperty("is_custom", item.get("custom_duration_hours") is not None)
+        
+        edit_button = QPushButton()
+        edit_button.setIcon(get_refresh_icon())
+        edit_button.setIconSize(QSize(14, 14))
+        edit_button.setFixedWidth(28)
+        edit_button.setToolTip("按开始/结束时间重新计算工时")
+        edit_button.setStyleSheet("QPushButton { padding: 4px; background-color: transparent; border: 1px solid #dcdfe6; border-radius: 4px; } QPushButton:hover { background-color: #f5f7fa; }")
+        
+        duration_layout.addWidget(duration_spin)
+        duration_layout.addWidget(edit_button)
+
         percentage_item = QTableWidgetItem()
-        duration_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
         percentage_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
-        duration_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         percentage_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        registered_checkbox = QCheckBox()
+        registered_checkbox.setStyleSheet("margin-left: 5px; margin-right: 5px;")
+        checkbox_widget = QWidget()
+        checkbox_layout = QHBoxLayout(checkbox_widget)
+        checkbox_layout.setContentsMargins(0, 0, 0, 0)
+        checkbox_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        checkbox_layout.addWidget(registered_checkbox)
 
         self.table.setCellWidget(row, 0, start_edit)
         self.table.setCellWidget(row, 1, end_edit)
-        self.table.setItem(row, 2, duration_item)
+        self.table.setCellWidget(row, 2, duration_widget)
         self.table.setItem(row, 3, percentage_item)
-        self.table.setCellWidget(row, 4, task_edit)
-        self.table.setCellWidget(row, 5, delete_button)
+        self.table.setCellWidget(row, 4, checkbox_widget)
+        self.table.setCellWidget(row, 5, task_edit)
+        self.table.setCellWidget(row, 6, delete_button)
+
+        registered_checkbox.stateChanged.connect(self.on_table_input_changed)
+        
+        duration_spin.editingFinished.connect(lambda r=row: self.mark_duration_custom_and_persist(r))
+        edit_button.clicked.connect(lambda *args, r=row: self.reset_duration(r))
 
         self.update_display_row(row, item, day_total_hours)
 
@@ -727,43 +793,78 @@ class WorklogWidget(QWidget):
             lunch_settings["start_time"],
             lunch_settings["end_time"],
         )
-        duration_hours = duration_details["duration_hours"]
-        percentage = calculate_percentage(duration_hours, day_total_hours)
-        is_valid_range = duration_details["is_valid_range"]
+        
+        custom_duration = item.get("custom_duration_hours")
+        if custom_duration is not None:
+            duration_hours = custom_duration
+            is_valid_range = True
+        else:
+            duration_hours = duration_details["duration_hours"]
+            is_valid_range = duration_details["is_valid_range"]
 
-        duration_item = self.table.item(row, 2)
+        percentage = calculate_percentage(duration_hours, day_total_hours)
+
+        duration_widget = self.table.cellWidget(row, 2)
+        duration_spin = duration_widget.findChild(QDoubleSpinBox)
+        edit_button = duration_widget.findChild(QPushButton)
+
+        duration_spin.blockSignals(True)
+        if custom_duration is not None:
+            if duration_spin.value() != custom_duration:
+                duration_spin.setValue(custom_duration)
+            duration_spin.setProperty("is_custom", True)
+        else:
+            if duration_spin.value() != duration_hours:
+                duration_spin.setValue(duration_hours)
+            duration_spin.setProperty("is_custom", False)
+            
+        duration_spin.setEnabled(True)
+        duration_spin.setStyleSheet("QDoubleSpinBox { border: 1px solid #dcdfe6; border-radius: 4px; padding: 2px; }")
+        duration_spin.blockSignals(False)
+
+        checkbox_widget = self.table.cellWidget(row, 4)
+        if checkbox_widget:
+            registered_checkbox = checkbox_widget.findChild(QCheckBox)
+            registered_checkbox.blockSignals(True)
+            registered_checkbox.setChecked(bool(item.get("is_registered")))
+            registered_checkbox.blockSignals(False)
+
         percentage_item = self.table.item(row, 3)
         start_edit = self.table.cellWidget(row, 0)
         end_edit = self.table.cellWidget(row, 1)
 
         if is_valid_range:
-            duration_item.setText(f"{duration_hours:.2f} h")
             percentage_item.setText(f"{percentage:.2f}%")
-            duration_item.setForeground(Qt.GlobalColor.black)
+            if custom_duration is None:
+                duration_spin.setStyleSheet("QDoubleSpinBox { border: none; background: transparent; color: black; }")
             percentage_item.setForeground(Qt.GlobalColor.black)
             start_edit.setStyleSheet("")
             end_edit.setStyleSheet("")
-            if duration_details["lunch_break_applied"]:
+            
+            if custom_duration is not None:
+                tooltip = f"自定义工时：{custom_duration:.2f} 小时"
+                duration_widget.setToolTip(tooltip)
+                percentage_item.setToolTip(tooltip)
+            elif duration_details["lunch_break_applied"]:
                 tooltip = (
                     f"原始时长 {duration_details['raw_hours']:.2f} 小时，"
                     f"已跳过午休 {duration_details['lunch_break_hours']:.2f} 小时，"
                     f"计入 {duration_hours:.2f} 小时。"
                 )
-                duration_item.setToolTip(tooltip)
+                duration_widget.setToolTip(tooltip)
                 percentage_item.setToolTip(tooltip)
             else:
-                duration_item.setToolTip("")
+                duration_widget.setToolTip("")
                 percentage_item.setToolTip("")
         else:
-            duration_item.setText("无效")
             percentage_item.setText("0.00%")
-            duration_item.setForeground(Qt.GlobalColor.red)
+            duration_spin.setStyleSheet("QDoubleSpinBox { border: none; background: transparent; color: #f56c6c; }")
             percentage_item.setForeground(Qt.GlobalColor.red)
             invalid_style = "QTimeEdit { border: 1px solid #f56c6c; border-radius: 6px; padding: 6px 8px; }"
             start_edit.setStyleSheet(invalid_style)
             end_edit.setStyleSheet(invalid_style)
             tooltip = "结束时间必须晚于开始时间，该行暂按 0 小时处理。"
-            duration_item.setToolTip(tooltip)
+            duration_widget.setToolTip(tooltip)
             percentage_item.setToolTip(tooltip)
 
     def build_items_from_table(self):
@@ -775,7 +876,18 @@ class WorklogWidget(QWidget):
         for row in range(self.table.rowCount()):
             start_edit = self.table.cellWidget(row, 0)
             end_edit = self.table.cellWidget(row, 1)
-            task_edit = self.table.cellWidget(row, 4)
+            task_edit = self.table.cellWidget(row, 5)
+            
+            duration_widget = self.table.cellWidget(row, 2)
+            duration_spin = duration_widget.findChild(QDoubleSpinBox)
+            is_custom = duration_spin.property("is_custom")
+            custom_duration = round(duration_spin.value(), 2) if is_custom else None
+
+            checkbox_widget = self.table.cellWidget(row, 4)
+            is_registered = False
+            if checkbox_widget:
+                registered_checkbox = checkbox_widget.findChild(QCheckBox)
+                is_registered = registered_checkbox.isChecked()
 
             item = {
                 "id": str(task_edit.property("item_id") or uuid.uuid4()),
@@ -783,13 +895,17 @@ class WorklogWidget(QWidget):
                 "start_time": start_edit.time().toString("HH:mm"),
                 "end_time": end_edit.time().toString("HH:mm"),
                 "task_text": task_edit.text(),
+                "is_registered": is_registered,
+                "custom_duration_hours": custom_duration,
             }
-            item["duration_hours"] = calculate_duration_hours(
+            auto_duration = calculate_duration_hours(
                 item["start_time"],
                 item["end_time"],
                 lunch_settings["start_time"],
                 lunch_settings["end_time"],
             )
+            item["duration_hours"] = custom_duration if custom_duration is not None else auto_duration
+            
             items.append(item)
             self.update_display_row(row, item, day_total_hours)
 
@@ -908,6 +1024,22 @@ class WorklogWidget(QWidget):
         day["items"] = [item for item in day["items"] if item.get("id") != item_id]
         self.save_data()
         self.load_current_date()
+
+    def mark_duration_custom_and_persist(self, row):
+        duration_widget = self.table.cellWidget(row, 2)
+        if duration_widget:
+            duration_spin = duration_widget.findChild(QDoubleSpinBox)
+            if duration_spin:
+                duration_spin.setProperty("is_custom", True)
+        self.persist_current_day()
+
+    def reset_duration(self, row):
+        duration_widget = self.table.cellWidget(row, 2)
+        if duration_widget:
+            duration_spin = duration_widget.findChild(QDoubleSpinBox)
+            if duration_spin:
+                duration_spin.setProperty("is_custom", False)
+        self.persist_current_day()
 
     def on_table_input_changed(self):
         self.persist_current_day()
