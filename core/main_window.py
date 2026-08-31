@@ -1,21 +1,26 @@
 import logging
-import sys
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
                              QListWidget, QListWidgetItem, QStackedWidget,
-                             QLabel, QPushButton, QFrame, QApplication)
+                             QLabel, QPushButton, QFrame, QSizePolicy)
 from PyQt6.QtCore import Qt, QSize
-from PyQt6.QtGui import QIcon, QFont
+from PyQt6.QtGui import QIcon
 from core.app_paths import get_resource_path
 
 
 logger = logging.getLogger(__name__)
 
 class MainWindow(QMainWindow):
+    SIDEBAR_EXPANDED_WIDTH = 220
+    SIDEBAR_COLLAPSED_WIDTH = 60
+    NAV_ITEM_HEIGHT = 46
+    SYSTEM_PLUGIN_IDS = ("sys_settings", "sys_about")
+
     def __init__(self, config_manager, plugin_manager):
         super().__init__()
         self.config_manager = config_manager
         self.plugin_manager = plugin_manager
         self.plugin_widgets = {} # plugin_id -> QWidget (in stacked widget)
+        self._sidebar_expanded = True
         
         self.initUI()
         self.load_plugins_to_ui()
@@ -37,17 +42,18 @@ class MainWindow(QMainWindow):
                 background-color: #f5f7fa;
                 border-right: 1px solid #e4e7ed;
             }
-            QListWidget {
+            QListWidget#PluginNavigation,
+            QListWidget#SystemNavigation {
                 background-color: transparent;
                 border: none;
                 outline: none;
             }
             QListWidget::item {
-                padding: 12px 15px;
+                padding: 11px 16px;
                 border-radius: 6px;
-                margin: 2px 10px;
+                margin: 3px 8px;
                 color: #606266;
-                font-size: 14px;
+                font-size: 15px;
             }
             QListWidget::item:hover {
                 background-color: #e4e7ed;
@@ -58,11 +64,47 @@ class MainWindow(QMainWindow):
                 color: white;
                 font-weight: bold;
             }
-            QLabel#Logo {
-                font-size: 18px;
-                font-weight: bold;
-                color: #303133;
-                padding: 20px 10px;
+            QScrollBar:vertical {
+                background: transparent;
+                width: 6px;
+                margin: 4px 2px 4px 0;
+            }
+            QScrollBar::handle:vertical {
+                background: #c8d0db;
+                border-radius: 3px;
+                min-height: 24px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: #aeb8c6;
+            }
+            QScrollBar::add-line:vertical,
+            QScrollBar::sub-line:vertical {
+                height: 0;
+            }
+            QScrollBar::add-page:vertical,
+            QScrollBar::sub-page:vertical {
+                background: transparent;
+            }
+            QFrame#SidebarDivider {
+                background-color: #e9edf2;
+                border: none;
+                max-height: 1px;
+            }
+            QPushButton#SidebarToggle {
+                border: 1px solid #e6ebf1;
+                border-radius: 8px;
+                font-size: 24px;
+                color: #606266;
+                background-color: #eef2f6;
+            }
+            QPushButton#SidebarToggle:hover {
+                border-color: #dce5ee;
+                color: #409eff;
+                background-color: #e5ebf2;
+            }
+            QPushButton#SidebarToggle:pressed {
+                border-color: #d4dfe9;
+                background-color: #dce5ee;
             }
         """)
 
@@ -76,49 +118,53 @@ class MainWindow(QMainWindow):
         # ====== 左侧边栏 ======
         self.sidebar = QFrame()
         self.sidebar.setObjectName("Sidebar")
-        self.sidebar.setFixedWidth(220)
+        self.sidebar.setFixedWidth(self.SIDEBAR_EXPANDED_WIDTH)
         sidebar_layout = QVBoxLayout(self.sidebar)
-        sidebar_layout.setContentsMargins(0, 0, 0, 10)
+        sidebar_layout.setContentsMargins(0, 10, 0, 8)
         sidebar_layout.setSpacing(0)
 
-        # 侧边栏头部
-        sidebar_header = QWidget()
-        sidebar_header.setFixedHeight(60)
-        sidebar_header_layout = QHBoxLayout(sidebar_header)
-        sidebar_header_layout.setContentsMargins(10, 0, 10, 0)
-        sidebar_header_layout.setSpacing(10)
-        
-        self.btn_toggle = QPushButton("☰")
-        self.btn_toggle.setFixedSize(40, 40)
-        self.btn_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_toggle.setStyleSheet("QPushButton { border: none; font-size: 20px; color: #606266; } QPushButton:hover { color: #409eff; }")
-        self.btn_toggle.clicked.connect(self.toggle_sidebar)
-        
-        self.logo_icon = QLabel()
-        self.logo_icon.setObjectName("LogoIcon")
-        self.logo_icon.setFixedSize(32, 32)
-        self.logo_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.logo_icon.setPixmap(
-            QIcon(get_resource_path("assets/app_icon.ico")).pixmap(QSize(32, 32))
+        # 上方只放普通插件，列表占据剩余空间并在插件过多时滚动。
+        self.nav_list = self._create_navigation_list(
+            "PluginNavigation", scroll_bar_policy=Qt.ScrollBarPolicy.ScrollBarAsNeeded
         )
-
-        self.logo_label = QLabel("ToolX")
-        self.logo_label.setObjectName("Logo")
-        self.logo_label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
-        
-        sidebar_header_layout.addWidget(self.logo_icon)
-        sidebar_header_layout.addWidget(self.logo_label)
-        sidebar_header_layout.addStretch()
-        sidebar_header_layout.addWidget(self.btn_toggle)
-        
-        # 插件导航列表
-        self.nav_list = QListWidget()
-        self.nav_list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.nav_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.nav_list.currentRowChanged.connect(self.switch_page)
 
-        sidebar_layout.addWidget(sidebar_header)
-        sidebar_layout.addWidget(self.nav_list)
+        # 下方系统入口不参与伸缩，始终贴在侧边栏底部。
+        self.system_nav_list = self._create_navigation_list(
+            "SystemNavigation", scroll_bar_policy=Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self.system_nav_list.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+        )
+        self.system_nav_list.currentRowChanged.connect(self.switch_system_page)
+
+        sidebar_divider = QFrame()
+        sidebar_divider.setObjectName("SidebarDivider")
+        sidebar_divider.setFrameShape(QFrame.Shape.NoFrame)
+        sidebar_divider.setFixedHeight(1)
+
+        # 只保留一个位于底部的折叠按钮，按钮占满可用宽度以扩大点击区域。
+        sidebar_footer = QWidget()
+        self.sidebar_footer_layout = QHBoxLayout(sidebar_footer)
+        self.sidebar_footer_layout.setContentsMargins(8, 8, 8, 2)
+        self.sidebar_footer_layout.setSpacing(0)
+
+        self.btn_toggle = QPushButton("‹")
+        self.btn_toggle.setObjectName("SidebarToggle")
+        self.btn_toggle.setFixedHeight(44)
+        self.btn_toggle.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+        )
+        self.btn_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_toggle.setToolTip("收起侧边栏")
+        self.btn_toggle.clicked.connect(self.toggle_sidebar)
+
+        self.sidebar_footer_layout.addWidget(self.btn_toggle)
+
+        sidebar_layout.addWidget(self.nav_list, 1)
+        sidebar_layout.addWidget(sidebar_divider)
+        sidebar_layout.addWidget(self.system_nav_list)
+        sidebar_layout.addWidget(sidebar_footer)
         
         # ====== 右侧内容区 ======
         self.stacked_widget = QStackedWidget()
@@ -138,52 +184,104 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(self.stacked_widget)
         
     def toggle_sidebar(self):
-        is_expanded = self.sidebar.width() == 220
-        new_width = 60 if is_expanded else 220
+        self._sidebar_expanded = not self._sidebar_expanded
+        new_width = (
+            self.SIDEBAR_EXPANDED_WIDTH
+            if self._sidebar_expanded
+            else self.SIDEBAR_COLLAPSED_WIDTH
+        )
         self.sidebar.setFixedWidth(new_width)
-        self.logo_icon.setVisible(not is_expanded)
-        self.logo_label.setVisible(not is_expanded)
-        
-        if is_expanded:
-            self.nav_list.setStyleSheet("QListWidget::item { padding: 12px 0px; margin: 2px 5px; text-align: center; }")
+        self._apply_sidebar_state()
+
+    def _create_navigation_list(self, object_name, scroll_bar_policy):
+        nav_list = QListWidget()
+        nav_list.setObjectName(object_name)
+        nav_list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        nav_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        nav_list.setVerticalScrollBarPolicy(scroll_bar_policy)
+        nav_list.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
+        nav_list.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        return nav_list
+
+    def _apply_sidebar_state(self):
+        expanded = self._sidebar_expanded
+        self.btn_toggle.setFixedHeight(44)
+        self.btn_toggle.setMinimumWidth(0)
+        self.btn_toggle.setMaximumWidth(16777215)
+        self.btn_toggle.setText("‹" if expanded else "›")
+        self.btn_toggle.setToolTip("收起侧边栏" if expanded else "展开侧边栏")
+        if expanded:
+            self.sidebar_footer_layout.setContentsMargins(8, 8, 8, 2)
         else:
-            self.nav_list.setStyleSheet("")
-            
-        for i in range(self.nav_list.count()):
-            item = self.nav_list.item(i)
+            self.sidebar_footer_layout.setContentsMargins(6, 8, 6, 2)
+
+        for nav_list in (self.nav_list, self.system_nav_list):
+            if expanded:
+                nav_list.setStyleSheet("")
+            else:
+                nav_list.setStyleSheet(
+                    "QListWidget::item { padding: 10px 0px; margin: 2px 5px; }"
+                )
+            self._refresh_navigation_list(nav_list)
+
+    def _refresh_navigation_list(self, nav_list):
+        for row in range(nav_list.count()):
+            item = nav_list.item(row)
             p_id = item.data(Qt.ItemDataRole.UserRole)
             plugin = self.plugin_manager.get_plugin(p_id)
             if plugin:
-                if is_expanded:
-                    item.setText(plugin.get_icon())
-                    item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                    item.setToolTip(plugin.get_name())
-                else:
-                    item.setText(f"{plugin.get_icon()}  {plugin.get_name()}")
-                    item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-                    item.setToolTip("")
+                self._set_navigation_item_display(item, plugin)
+
+    def _set_navigation_item_display(self, item, plugin):
+        icon = plugin.get_icon()
+        name = plugin.get_name()
+        if isinstance(icon, QIcon):
+            item.setIcon(icon)
+            icon_text = ""
+        else:
+            item.setIcon(QIcon())
+            icon_text = "" if icon is None else str(icon)
+
+        if self._sidebar_expanded:
+            item.setText(f"{icon_text}  {name}" if icon_text else name)
+            item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            item.setToolTip("")
+        else:
+            item.setText(icon_text)
+            item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            item.setToolTip(name)
 
     def load_plugins_to_ui(self):
         """将加载的插件添加到侧边栏和堆叠区域"""
         plugins = self.plugin_manager.get_plugins()
         pinned = self.config_manager.get("pinned_plugins", [])
-        
-        # 优先显示 pinned 工具
+
+        # 优先显示 pinned 的普通工具；系统入口始终只出现在底部。
         for p_id in pinned:
-            if p_id in plugins:
-                self.add_plugin_item(plugins[p_id])
-                
-        # 显示其它工具
+            if p_id in plugins and p_id not in self.SYSTEM_PLUGIN_IDS:
+                self.add_plugin_item(plugins[p_id], self.nav_list)
+
+        # 显示其它普通工具
         for p_id, plugin in plugins.items():
-            if p_id not in pinned:
-                # 排除 settings 等特殊系统级插件暂时放这，稍后可特殊处理
-                self.add_plugin_item(plugin)
-                
-        # 如果有插件，默认选中第一个
+            if p_id not in pinned and p_id not in self.SYSTEM_PLUGIN_IDS:
+                self.add_plugin_item(plugin, self.nav_list)
+
+        # 系统设置、关于固定在导航底部，并保持稳定顺序。
+        for p_id in self.SYSTEM_PLUGIN_IDS:
+            if p_id in plugins:
+                self.add_plugin_item(plugins[p_id], self.system_nav_list)
+
+        self._resize_system_navigation()
+
+        # 如果有插件，默认选中第一个普通插件；没有普通插件时选系统入口。
         if self.nav_list.count() > 0:
             self.nav_list.setCurrentRow(0)
+        elif self.system_nav_list.count() > 0:
+            self.system_nav_list.setCurrentRow(0)
 
-    def add_plugin_item(self, plugin):
+    def add_plugin_item(self, plugin, nav_list=None):
+        if nav_list is None:
+            nav_list = self.nav_list
         p_id = "<unknown>"
         try:
             p_id = plugin.get_id()
@@ -198,29 +296,50 @@ class MainWindow(QMainWindow):
             self.plugin_widgets[p_id] = widget
 
             item = QListWidgetItem()
-            if self.sidebar.width() == 60:
-                item.setText(plugin.get_icon())
-                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                item.setToolTip(plugin.get_name())
-            else:
-                item.setText(f"{plugin.get_icon()}  {plugin.get_name()}")
-                item.setToolTip("")
+            item.setSizeHint(QSize(0, self.NAV_ITEM_HEIGHT))
             item.setData(Qt.ItemDataRole.UserRole, p_id)
-            self.nav_list.addItem(item)
+            nav_list.addItem(item)
+            self._set_navigation_item_display(item, plugin)
             return True
         except Exception:
             logger.exception("插件 %s 页面创建失败，已跳过该插件", p_id)
             return False
 
     def switch_page(self, row):
+        self._switch_page(self.nav_list, row)
+
+    def switch_system_page(self, row):
+        self._switch_page(self.system_nav_list, row)
+
+    def _switch_page(self, source_list, row):
         if row < 0:
             return
-        item = self.nav_list.item(row)
+        item = source_list.item(row)
+        if item is None:
+            return
         p_id = item.data(Qt.ItemDataRole.UserRole)
-        
+
         if p_id in self.plugin_widgets:
+            for nav_list in (self.nav_list, self.system_nav_list):
+                if nav_list is source_list:
+                    continue
+                nav_list.blockSignals(True)
+                try:
+                    nav_list.clearSelection()
+                    nav_list.setCurrentRow(-1)
+                finally:
+                    nav_list.blockSignals(False)
+
             widget = self.plugin_widgets[p_id]
             self.stacked_widget.setCurrentWidget(widget)
+
+    def _resize_system_navigation(self):
+        if self.system_nav_list.count() == 0:
+            self.system_nav_list.setFixedHeight(0)
+            return
+        self.system_nav_list.setFixedHeight(
+            self.system_nav_list.count() * self.NAV_ITEM_HEIGHT + 4
+        )
 
     def closeEvent(self, event):
         # 记住窗口尺寸

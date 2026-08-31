@@ -65,7 +65,7 @@ class AboutPlugin(PluginInterface):
         return "sys_about"
 
     def get_name(self) -> str:
-        return "关于本软件"
+        return "关于"
 
     def get_icon(self):
         return "ℹ️"
