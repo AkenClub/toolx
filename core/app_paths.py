@@ -5,6 +5,15 @@ import sys
 APP_NAME = "ToolX"
 
 
+def get_resource_path(relative_path):
+    """Return the absolute path of a bundled read-only resource."""
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        base_dir = sys._MEIPASS
+    else:
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base_dir, relative_path)
+
+
 def get_app_data_dir(app_name=APP_NAME):
     """Return the per-user directory used by ToolX for writable data."""
     override = os.environ.get("TOOLX_DATA_DIR")

@@ -5,14 +5,17 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from PyQt6.QtWidgets import QApplication
+from PyQt6.QtGui import QIcon
 from core.config_manager import ConfigManager
 from core.plugin_manager import PluginManager
 from core.main_window import MainWindow
+from core.app_paths import get_resource_path
 from core.logging_config import configure_logging
 
 def main():
     configure_logging()
     app = QApplication(sys.argv)
+    app.setWindowIcon(QIcon(get_resource_path("assets/app_icon.ico")))
     
     # 初始化配置管理器
     config = ConfigManager()

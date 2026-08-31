@@ -59,5 +59,8 @@ def test_main_window_skips_plugin_when_widget_creation_fails(qapp, tmp_path, cap
 
     assert window.nav_list.count() == 1
     assert window.nav_list.item(0).data(Qt.ItemDataRole.UserRole) == "good"
+    assert window.logo_label.text() == "ToolX"
+    assert not window.logo_icon.pixmap().isNull()
+    assert not window.windowIcon().isNull()
     assert "插件页面创建失败" in caplog.text
     window.close()

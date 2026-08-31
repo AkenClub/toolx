@@ -5,6 +5,7 @@ from PyQt6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
                              QLabel, QPushButton, QFrame, QApplication)
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QIcon, QFont
+from core.app_paths import get_resource_path
 
 
 logger = logging.getLogger(__name__)
@@ -21,6 +22,7 @@ class MainWindow(QMainWindow):
 
     def initUI(self):
         self.setWindowTitle('ToolX')
+        self.setWindowIcon(QIcon(get_resource_path("assets/app_icon.ico")))
         
         # 恢复窗口大小
         w, h = self.config_manager.get("window_size", [900, 600])
@@ -92,10 +94,19 @@ class MainWindow(QMainWindow):
         self.btn_toggle.setStyleSheet("QPushButton { border: none; font-size: 20px; color: #606266; } QPushButton:hover { color: #409eff; }")
         self.btn_toggle.clicked.connect(self.toggle_sidebar)
         
-        self.logo_label = QLabel("🧰 ToolX")
+        self.logo_icon = QLabel()
+        self.logo_icon.setObjectName("LogoIcon")
+        self.logo_icon.setFixedSize(32, 32)
+        self.logo_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.logo_icon.setPixmap(
+            QIcon(get_resource_path("assets/app_icon.ico")).pixmap(QSize(32, 32))
+        )
+
+        self.logo_label = QLabel("ToolX")
         self.logo_label.setObjectName("Logo")
         self.logo_label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
         
+        sidebar_header_layout.addWidget(self.logo_icon)
         sidebar_header_layout.addWidget(self.logo_label)
         sidebar_header_layout.addStretch()
         sidebar_header_layout.addWidget(self.btn_toggle)
@@ -130,6 +141,7 @@ class MainWindow(QMainWindow):
         is_expanded = self.sidebar.width() == 220
         new_width = 60 if is_expanded else 220
         self.sidebar.setFixedWidth(new_width)
+        self.logo_icon.setVisible(not is_expanded)
         self.logo_label.setVisible(not is_expanded)
         
         if is_expanded:

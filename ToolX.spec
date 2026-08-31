@@ -6,7 +6,10 @@ a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[('plugins', 'plugins')],
+    datas=[
+        ('plugins', 'plugins'),
+        ('assets', 'assets'),
+    ],
     hiddenimports=[
         'plugins.quick_copy.plugin',
         'plugins.about.plugin',
@@ -44,8 +47,8 @@ exe = EXE(
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
+    icon='assets/app_icon.ico',
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    # icon=['app.ico'], # 如果有图标文件可以指向这里
 )
