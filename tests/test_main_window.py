@@ -141,3 +141,16 @@ def test_sidebar_separates_system_navigation_and_keeps_footer(qapp, tmp_path):
 
 def test_about_plugin_uses_short_navigation_name():
     assert AboutPlugin().get_name() == "关于"
+
+
+def test_about_plugin_displays_application_logo(qapp):
+    widget = AboutPlugin().get_widget(None)
+
+    logo = widget.findChild(QLabel, "Logo")
+    title = widget.findChild(QLabel, "Title")
+
+    assert logo is not None
+    assert logo.pixmap() is not None
+    assert not logo.pixmap().isNull()
+    assert title is not None
+    assert title.text() == "ToolX"

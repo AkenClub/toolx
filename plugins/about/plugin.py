@@ -1,8 +1,12 @@
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtGui import QPixmap
 from core.plugin_interface import PluginInterface
+from core.app_paths import get_resource_path
 
 class AboutWidget(QWidget):
+    LOGO_SIZE = QSize(112, 112)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.initUI()
@@ -19,6 +23,10 @@ class AboutWidget(QWidget):
                 color: #409eff;
                 margin-bottom: 10px;
             }
+            QLabel#Logo {
+                background-color: transparent;
+                margin-bottom: 8px;
+            }
             QLabel#Version {
                 font-size: 14px;
                 color: #909399;
@@ -32,8 +40,23 @@ class AboutWidget(QWidget):
         """)
         layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        
-        title = QLabel("🧰 ToolX")
+
+        logo = QLabel()
+        logo.setObjectName("Logo")
+        logo.setAccessibleName("ToolX logo")
+        logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        logo.setFixedSize(self.LOGO_SIZE)
+        logo_pixmap = QPixmap(get_resource_path("assets/app_icon.png"))
+        if logo_pixmap.isNull():
+            logo.setText("ToolX")
+        else:
+            logo.setPixmap(logo_pixmap.scaled(
+                self.LOGO_SIZE,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            ))
+
+        title = QLabel("ToolX")
         title.setObjectName("Title")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
@@ -51,6 +74,7 @@ class AboutWidget(QWidget):
         desc.setObjectName("Desc")
         desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
+        layout.addWidget(logo, alignment=Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
         layout.addWidget(version)
         layout.addWidget(desc)
