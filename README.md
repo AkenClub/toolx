@@ -9,8 +9,8 @@
 ## ✨ 核心特性
 
 * **🚀 极简美学 UI**：采用现代化的扁平风格侧边栏设计风格，支持右侧无缝切换不同工具模块。
-* **🔌 深度插件化架构**：核心业务功能完全解耦，采用内置 `importlib` 热加载机制。新增工具只需放入指定位置即能在右侧栏加载。
-* **📌 便捷的置顶管理**：支持配置文件 `toolx_config.json` 自动存储你喜欢的工具栏布局与窗口设定。
+* **🔌 深度插件化架构**：核心业务功能完全解耦，启动时通过 `importlib` 自动发现插件。新增工具放入指定位置并重启应用后即可加载，插件错误会被隔离并写入日志。
+* **📌 便捷的置顶管理**：支持用户数据目录中的 `toolx_config.json` 自动存储你喜欢的工具栏布局与窗口设定。
 
 ## 📦 内置工具
 
@@ -18,7 +18,7 @@
 1. **⚡ 极速中转站 (Quick Copy)**：帮助一键将超长文本中转、处理和极速复制生成临时文件的快捷助手，特别适合突破微信等平台的字数限制。
 2. **⚙️ 系统设置 (Sys Settings)**：管理整体框架风格（框架预留）。
 3. **ℹ️ 关于本软件 (Sys About)**：版本介绍与开源信息。
-4. **🕒 任务工时 (Worklog)**：按天记录多条任务、精确时间范围、自动换算工时占比，并实时保存到本地。
+4. **🕒 任务工时 (Worklog)**：按天记录多条任务，默认按时间范围自动计算工时并扣除午休；支持手动覆盖工时、已登记标记、占比汇总和实时保存。
 
 ## 🚀 快速开始
 
@@ -31,8 +31,11 @@
 python -m venv venv
 .\venv\Scripts\activate  # Windows 下
 
-# 安装核心依赖
-pip install PyQt6
+# 安装运行依赖
+python -m pip install -r requirements.txt
+
+# 如需运行测试，再安装开发依赖
+python -m pip install -r requirements-dev.txt
 ```
 
 ### 2. 运行应用
@@ -41,19 +44,40 @@ pip install PyQt6
 python main.py
 ```
 
-### 3. 打包应用 (打包为 EXE)
+### 3. 运行测试
+
+```bash
+python -m pytest -q
+```
+
+### 4. 打包应用 (打包为 EXE)
 
 本项目已配置好了 PyInstaller 的打包配置 `ToolX.spec`。如果你需要将其打包成独立的 Windows 可执行文件，可以在虚拟环境下执行以下步骤：
 
 ```bash
-# 安装打包工具
-pip install pyinstaller
+# requirements-dev.txt 已包含 PyInstaller；如果尚未安装开发依赖：
+python -m pip install -r requirements-dev.txt
 
 # 运行打包配置文件
 pyinstaller ToolX.spec
 ```
 
 打包完成后，生成的独立 `.exe` 文件将保存在项目根目录下的 `dist` 文件夹内。可以直接双击运行，或者分享给他人使用。
+
+## 💾 用户数据位置
+
+配置和任务工时数据保存在当前用户的数据目录中。Windows 默认位置为：
+
+```text
+%APPDATA%\ToolX\
+├── toolx_config.json
+├── worklog\data.json
+└── logs\toolx.log
+```
+
+首次启动时会尝试迁移旧版工作目录或 exe 目录中的 `toolx_config.json` 和 `plugins/worklog/data.json`，旧文件会保留作为备份。
+
+工时规则：任务默认使用开始/结束时间自动计算，并扣除与全局午休的重叠部分；如果业务上需要，可以直接编辑“工时”列形成手动覆盖，点击该行刷新按钮即可恢复自动计算。`已登记` 仅表示登记状态，不参与工时计算。
 
 ## 🛠️ 为它开发插件
 

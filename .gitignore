@@ -10,6 +10,9 @@ __pycache__/
 build/
 develop-eggs/
 dist/
+
+# Runtime data created by the legacy worklog location
+plugins/worklog/data.json
 downloads/
 eggs/
 .eggs/

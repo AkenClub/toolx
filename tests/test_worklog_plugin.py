@@ -8,6 +8,7 @@ from plugins.worklog.plugin import (
     ensure_day,
     get_next_task_time_range,
     load_worklog_data,
+    normalize_task_item,
     save_worklog_data,
     summarize_day,
 )
@@ -43,9 +44,11 @@ def test_ensure_day_creates_defaults():
     assert day["items"] == []
 
 
-def test_create_task_item_uses_first_task_default_time_range():
+def test_create_task_item_uses_documented_default_time_range():
     item = create_task_item("2026-04-15")
 
+    assert item["start_time"] == "09:00"
+    assert item["end_time"] == "09:30"
     assert item["start_time"] == DEFAULT_START_TIME
     assert item["end_time"] == DEFAULT_END_TIME
     assert item["duration_hours"] == 0.5
@@ -149,6 +152,24 @@ def test_summarize_day_reports_skipped_lunch_break():
     assert summary["invalid_count"] == 0
 
 
+def test_manual_duration_override_is_used_without_double_counting_lunch():
+    item = normalize_task_item(
+        {
+            "start_time": "11:00",
+            "end_time": "14:00",
+            "custom_duration_hours": 8,
+        },
+        "2026-04-15",
+    )
+
+    summary = summarize_day([item], 7.5)
+
+    assert summary["total_hours"] == 8.0
+    assert summary["lunch_break_hours"] == 0.0
+    assert summary["lunch_break_applied_count"] == 0
+    assert summary["invalid_count"] == 0
+
+
 def test_load_corrupted_json_recovers_empty(tmp_path):
     data_file = tmp_path / "data.json"
     data_file.write_text("{broken", encoding="utf-8")
@@ -172,6 +193,8 @@ def test_save_and_load_roundtrip(tmp_path):
                         "start_time": "09:00",
                         "end_time": "10:30",
                         "task_text": "Implement plugin",
+                        "is_registered": False,
+                        "custom_duration_hours": None,
                         "duration_hours": 1.5,
                     }
                 ],

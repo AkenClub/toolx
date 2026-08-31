@@ -11,7 +11,10 @@ a = Analysis(
         'plugins.quick_copy.plugin',
         'plugins.about.plugin',
         'plugins.settings.plugin',
-        'plugins.worklog.plugin'
+        'plugins.worklog.plugin',
+        'plugins.worklog.calculations',
+        'plugins.worklog.storage',
+        'plugins.worklog.ui'
     ],
     hookspath=[],
     hooksconfig={},

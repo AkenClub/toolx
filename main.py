@@ -8,12 +8,14 @@ from PyQt6.QtWidgets import QApplication
 from core.config_manager import ConfigManager
 from core.plugin_manager import PluginManager
 from core.main_window import MainWindow
+from core.logging_config import configure_logging
 
 def main():
+    configure_logging()
     app = QApplication(sys.argv)
     
     # 初始化配置管理器
-    config = ConfigManager(config_file="toolx_config.json")
+    config = ConfigManager()
     
     # 初始化插件管理器
     plugin_mgr = PluginManager(config_manager=config, plugin_package="plugins")

@@ -1,9 +1,13 @@
+import logging
 import sys
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
                              QListWidget, QListWidgetItem, QStackedWidget,
                              QLabel, QPushButton, QFrame, QApplication)
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QIcon, QFont
+
+
+logger = logging.getLogger(__name__)
 
 class MainWindow(QMainWindow):
     def __init__(self, config_manager, plugin_manager):
@@ -168,26 +172,33 @@ class MainWindow(QMainWindow):
             self.nav_list.setCurrentRow(0)
 
     def add_plugin_item(self, plugin):
-        p_id = plugin.get_id()
-        if p_id in self.plugin_widgets:
-            return # 已经添加过了
-            
-        # 1. 获取并添加 Widget 到 StackedWidget
-        widget = plugin.get_widget(self)
-        self.stacked_widget.addWidget(widget)
-        self.plugin_widgets[p_id] = widget
-        
-        # 2. 添加到侧边栏
-        item = QListWidgetItem()
-        if self.sidebar.width() == 60:
-            item.setText(plugin.get_icon())
-            item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            item.setToolTip(plugin.get_name())
-        else:
-            item.setText(f"{plugin.get_icon()}  {plugin.get_name()}")
-            item.setToolTip("")
-        item.setData(Qt.ItemDataRole.UserRole, p_id)
-        self.nav_list.addItem(item)
+        p_id = "<unknown>"
+        try:
+            p_id = plugin.get_id()
+            if p_id in self.plugin_widgets:
+                return False  # 已经添加过了
+
+            # 插件页面创建失败时只跳过该插件，不能拖垮主窗口。
+            widget = plugin.get_widget(self)
+            if not isinstance(widget, QWidget):
+                raise TypeError("get_widget() 必须返回 QWidget 实例")
+            self.stacked_widget.addWidget(widget)
+            self.plugin_widgets[p_id] = widget
+
+            item = QListWidgetItem()
+            if self.sidebar.width() == 60:
+                item.setText(plugin.get_icon())
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                item.setToolTip(plugin.get_name())
+            else:
+                item.setText(f"{plugin.get_icon()}  {plugin.get_name()}")
+                item.setToolTip("")
+            item.setData(Qt.ItemDataRole.UserRole, p_id)
+            self.nav_list.addItem(item)
+            return True
+        except Exception:
+            logger.exception("插件 %s 页面创建失败，已跳过该插件", p_id)
+            return False
 
     def switch_page(self, row):
         if row < 0:

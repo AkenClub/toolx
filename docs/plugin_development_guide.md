@@ -13,13 +13,15 @@ ToolX/
 │   ├── quick_copy/          # 内置的快速复制插件
 │   ├── my_awesome_tool/     # 你的插件目录
 │   │   ├── plugin.py        # 必须有的插件入口文件
-│   │   └── (其他你的代码或资源)
+│   │   └── (其他代码、资源或子模块)
 ├── main.py                  # 应用入口
-└── toolx_config.json        # 用户配置文件
+└── (用户数据保存在系统用户目录)
 ```
 
 **⚠️ 核心要求**：
-* 插件文件夹内**必须且仅必须**包含一个名为 `plugin.py` 的入口文件。
+* 插件文件夹内必须包含名为 `plugin.py` 的入口文件；其它 Python 模块和资源文件可以按需放置。
+* `get_plugin(config_manager)` 必须返回 `PluginInterface` 实例。
+* 每个插件的 `get_id()` 必须返回全局唯一、非空且不带首尾空格的字符串。
 
 ---
 
@@ -30,8 +32,13 @@ ToolX/
 ### 最简示例代码：
 
 ```python
+import logging
+
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel
 from core.plugin_interface import PluginInterface
+
+
+logger = logging.getLogger(__name__)
 
 # 1. 编写你的工具 UI 组件 (必须继承自 QWidget)
 class MyToolWidget(QWidget):
@@ -68,7 +75,7 @@ class MyAwesomePlugin(PluginInterface):
         
     def on_load(self):
         # 插件当被扫描加载进系统时的生命周期回调（可选）
-        print("MyAwesomePlugin 已加载")
+        logger.info("MyAwesomePlugin 已加载")
 
     def on_unload(self):
         # 插件被卸载或程序退出时的生命周期回调（可选）
@@ -81,8 +88,9 @@ def get_plugin(config_manager):
 
 ## 3. 🧪 测试你的插件
 
-编写完 `plugin.py` 后，只需重启主程序 `main.py`。
-由于项目内建了自动扫描与基于 `importlib` 的热导入装载，主界面启动后你的插件就会自动出现在左侧导航栏的末尾列表里！
+编写完 `plugin.py` 后，重启主程序 `main.py`。应用会在启动时扫描插件目录；单个插件导入、生命周期或页面创建失败时会跳过该插件，其它插件仍可继续启动，详细堆栈会写入用户数据目录下的 `logs/toolx.log`。
+
+如果要将插件打包进 PyInstaller 版本，还需要把插件模块加入 `ToolX.spec` 的 `hiddenimports`，并重新构建 exe。
 
 > **关于本地配置存储**：
-> 如果你的插件需要保存用户的配置设置，可以直接利用在 `__init__` 中传入的 `config_manager` 对象，调用 `self.config_manager.set(key, value)` 及 `get(key)` 方法。此参数将由框架持久化到全局的 JSON 配置中。也可以自己在插件目录内维护配置文件。
+> 如果你的插件需要保存用户的配置设置，可以直接利用在 `__init__` 中传入的 `config_manager` 对象，调用 `self.config_manager.set(key, value)` 及 `get(key)` 方法。配置会保存在用户数据目录下的 `toolx_config.json` 中。插件自己的业务数据建议使用独立文件，并通过原子写入避免程序中途退出造成损坏。
