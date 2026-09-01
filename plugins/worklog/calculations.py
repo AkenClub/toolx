@@ -47,7 +47,18 @@ def time_to_seconds(time_value):
 def get_lunch_break_settings(config_manager=None):
     raw_settings = {}
     if config_manager is not None:
-        raw_settings = config_manager.get(LUNCH_BREAK_CONFIG_KEY, {})
+        config = config_manager
+        if not hasattr(config, "get"):
+            config = getattr(config_manager, "config", None)
+        if hasattr(config, "get"):
+            raw_settings = config.get(LUNCH_BREAK_CONFIG_KEY, {})
+            if not raw_settings:
+                # Accept the short-lived migration format used by an early
+                # development build, where start/end lived at the file root.
+                raw_settings = {
+                    "start_time": config.get("start_time"),
+                    "end_time": config.get("end_time"),
+                }
 
     if not isinstance(raw_settings, dict):
         raw_settings = {}

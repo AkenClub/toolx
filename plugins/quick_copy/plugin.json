@@ -1,0 +1,16 @@
+{
+    "id": "quick_copy",
+    "name": "极速中转站",
+    "version": "1.0.0",
+    "description": "将长文本生成临时文件并复制到剪贴板。",
+    "author": "ToolX Team",
+    "homepage": "https://github.com/AkenClub/toolx",
+    "repository": "https://github.com/AkenClub/toolx",
+    "license": "MIT",
+    "api_version": 1,
+    "min_toolx_version": "1.0.0",
+    "entry": "plugin.py:get_plugin",
+    "permissions": ["clipboard", "open_path"],
+    "dependencies": [],
+    "settings": {"has_pages": true}
+}

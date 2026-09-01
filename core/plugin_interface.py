@@ -1,5 +1,25 @@
+from dataclasses import dataclass
+
 from PyQt6.QtWidgets import QWidget
 from PyQt6.QtGui import QIcon
+
+
+@dataclass
+class SettingsPage:
+    """A page contributed by a plugin to the core settings center."""
+
+    page_id: str
+    title: str
+    path: tuple
+    factory: object
+    plugin_id: str = ""
+    requires_restart: bool = False
+
+    def create_widget(self, parent=None):
+        if not callable(self.factory):
+            raise TypeError("设置页 factory 必须是可调用对象")
+        return self.factory(parent)
+
 
 class PluginInterface:
     """
@@ -7,12 +27,9 @@ class PluginInterface:
     所有自定义工具插件都必须继承并实现此内定义的方法。
     """
     
-    def __init__(self, config_manager=None):
-        """
-        初始化插件
-        :param config_manager: ConfigManager 实例，方便插件读写自身或全局配置
-        """
-        self.config_manager = config_manager
+    def __init__(self, context=None):
+        """Initialize the plugin with its restricted ``PluginContext``."""
+        self.context = context
 
     def get_id(self) -> str:
         """
@@ -46,3 +63,17 @@ class PluginInterface:
     def on_unload(self):
         """生命周期函数：插件卸载或退出时调用（可选）"""
         pass
+
+    def get_settings_pages(self):
+        """Return optional pages contributed to the core settings center."""
+        return []
+
+
+# Public compatibility exports: plugin authors can import the protocol and
+# context from the same module without gaining access to application globals.
+from .plugin_context import (  # noqa: E402  (kept at the end to avoid cycles)
+    HostServices,
+    PluginContext,
+    ScopedPluginConfig,
+    ScopedPluginStorage,
+)

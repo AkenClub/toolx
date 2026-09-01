@@ -2,7 +2,7 @@ import logging
 import os
 from logging.handlers import RotatingFileHandler
 
-from .app_paths import get_app_data_dir
+from .app_paths import get_logs_dir
 
 
 LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
@@ -11,7 +11,7 @@ LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
 def configure_logging():
     """Configure console and rotating file logs for the desktop application."""
     try:
-        log_dir = os.path.join(get_app_data_dir(), "logs")
+        log_dir = get_logs_dir()
         os.makedirs(log_dir, exist_ok=True)
         log_file = os.path.join(log_dir, "toolx.log")
         file_handler = RotatingFileHandler(

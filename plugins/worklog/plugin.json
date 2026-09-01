@@ -1,0 +1,16 @@
+{
+    "id": "worklog",
+    "name": "任务工时",
+    "version": "1.0.0",
+    "description": "按天记录任务和工时，并自动扣除午休。",
+    "author": "ToolX Team",
+    "homepage": "https://github.com/AkenClub/toolx",
+    "repository": "https://github.com/AkenClub/toolx",
+    "license": "MIT",
+    "api_version": 1,
+    "min_toolx_version": "1.0.0",
+    "entry": "plugin.py:get_plugin",
+    "permissions": [],
+    "dependencies": [],
+    "settings": {"has_pages": true}
+}

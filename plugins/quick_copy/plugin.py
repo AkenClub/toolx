@@ -7,13 +7,27 @@ from PyQt6.QtCore import QMimeData, QUrl
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import QApplication
 
-from core.plugin_interface import PluginInterface
+from core.plugin_interface import PluginInterface, SettingsPage
+
+
+DEFAULT_FILENAME_TEMPLATE = "log_{{yyyy}}{{MM}}{{dd}}_{{HH}}{{mm}}{{ss}}"
+FILENAME_TEMPLATE_CONFIG_KEY = "filename_template"
 
 class QuickCopyWidget(QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, context=None, parent=None):
+        if parent is None and isinstance(context, QWidget):
+            parent = context
+            context = None
         super().__init__(parent)
-        # 在系统临时目录下专门建一个文件夹存放垃圾文件
-        self.temp_dir = os.path.join(tempfile.gettempdir(), "WeChat_Temp_Files")
+        self.context = context
+        self.config = getattr(context, "config", None)
+        storage = getattr(context, "storage", None)
+        if storage is not None:
+            self.temp_dir = os.path.join(storage.cache_dir(), "temp_files")
+        else:
+            # Direct construction remains usable for compatibility, while
+            # normal plugin instances always use their scoped cache.
+            self.temp_dir = os.path.join(tempfile.gettempdir(), "WeChat_Temp_Files")
         if not os.path.exists(self.temp_dir):
             os.makedirs(self.temp_dir)
         self.current_temp_file = ""
@@ -106,8 +120,14 @@ class QuickCopyWidget(QWidget):
         prefix_label = QLabel("文件名模板 (支持时间变量):")
         prefix_label.setStyleSheet("font-size: 13px; font-weight: normal; color: #606266; margin-top: 5px;")
         self.filename_template_edit = QLineEdit()
-        self.filename_template_edit.setText("log_{{yyyy}}{{MM}}{{dd}}_{{HH}}{{mm}}{{ss}}")
+        template = (
+            self.config.get(FILENAME_TEMPLATE_CONFIG_KEY, DEFAULT_FILENAME_TEMPLATE)
+            if self.config is not None
+            else DEFAULT_FILENAME_TEMPLATE
+        )
+        self.filename_template_edit.setText(template)
         self.filename_template_edit.setPlaceholderText("如: 前缀-{{yyyy-MM-dd}}")
+        self.filename_template_edit.editingFinished.connect(self.save_settings)
 
         self.status_label = QLabel("当前未生成临时文件")
         self.status_label.setStyleSheet("color: #909399; font-weight: normal; margin-top: 10px; margin-bottom: 15px;")
@@ -151,7 +171,7 @@ class QuickCopyWidget(QWidget):
 
         template = self.filename_template_edit.text()
         if not template.strip():
-            template = "微信长文本_{{yyyy}}{{MM}}{{dd}}_{{HH}}{{mm}}{{ss}}"
+            template = DEFAULT_FILENAME_TEMPLATE
             
         now = datetime.now()
         filename = template.replace("{{yyyy}}", now.strftime("%Y")) \
@@ -214,10 +234,15 @@ class QuickCopyWidget(QWidget):
         self.status_label.setStyleSheet("color: #909399; font-weight: normal; margin-bottom: 15px;")
         QMessageBox.information(self, "清理完毕", f"系统轻装上阵，已清理 {count} 个历史临时文件！")
 
+    def save_settings(self):
+        if self.config is not None:
+            template = self.filename_template_edit.text().strip() or DEFAULT_FILENAME_TEMPLATE
+            self.config.set(FILENAME_TEMPLATE_CONFIG_KEY, template)
+
 
 class QuickCopyPlugin(PluginInterface):
-    def __init__(self, config_manager):
-        super().__init__(config_manager)
+    def __init__(self, context=None):
+        super().__init__(context)
         self.widget = None
 
     def get_id(self) -> str:
@@ -231,8 +256,57 @@ class QuickCopyPlugin(PluginInterface):
 
     def get_widget(self, parent: QWidget) -> QWidget:
         if self.widget is None:
-            self.widget = QuickCopyWidget(parent)
+            self.widget = QuickCopyWidget(self.context, parent)
         return self.widget
 
-def get_plugin(config_manager):
-    return QuickCopyPlugin(config_manager)
+    def get_settings_pages(self):
+        return [
+            SettingsPage(
+                page_id="general",
+                title="常规",
+                path=("插件", self.get_name()),
+                factory=lambda parent: QuickCopySettingsWidget(self.context, parent),
+                plugin_id=self.get_id(),
+            )
+        ]
+
+    def on_unload(self):
+        if self.widget is not None:
+            self.widget.save_settings()
+
+
+class QuickCopySettingsWidget(QWidget):
+    def __init__(self, context, parent=None):
+        super().__init__(parent)
+        self.context = context
+        self.config = getattr(context, "config", None)
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel("极速中转站设置"))
+        layout.addWidget(QLabel("文件名模板（支持 {{yyyy}}、{{MM}}、{{dd}}、{{HH}}、{{mm}}、{{ss}}）："))
+        self.template_edit = QLineEdit()
+        layout.addWidget(self.template_edit)
+        layout.addStretch(1)
+        self.load()
+
+    def load(self):
+        template = (
+            self.config.get(FILENAME_TEMPLATE_CONFIG_KEY, DEFAULT_FILENAME_TEMPLATE)
+            if self.config is not None
+            else DEFAULT_FILENAME_TEMPLATE
+        )
+        self.template_edit.setText(template)
+
+    def apply(self):
+        template = self.template_edit.text().strip()
+        if not template:
+            return False
+        if self.config is not None:
+            self.config.set(FILENAME_TEMPLATE_CONFIG_KEY, template)
+        return True
+
+    def reset(self):
+        self.template_edit.setText(DEFAULT_FILENAME_TEMPLATE)
+
+
+def get_plugin(context):
+    return QuickCopyPlugin(context)

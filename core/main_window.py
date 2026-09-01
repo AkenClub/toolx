@@ -5,9 +5,29 @@ from PyQt6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QIcon
 from core.app_paths import get_resource_path
+from core.settings.pages.about import AboutPage
+from core.settings.settings_widget import SettingsWidget
+from core.system_context import SystemContext
 
 
 logger = logging.getLogger(__name__)
+
+
+class _NavigationEntry:
+    def __init__(self, plugin_id, name, icon):
+        self.plugin_id = plugin_id
+        self.name = name
+        self.icon = icon
+
+    def get_id(self):
+        return self.plugin_id
+
+    def get_name(self):
+        return self.name
+
+    def get_icon(self):
+        return self.icon
+
 
 class MainWindow(QMainWindow):
     SIDEBAR_EXPANDED_WIDTH = 220
@@ -15,11 +35,21 @@ class MainWindow(QMainWindow):
     NAV_ITEM_HEIGHT = 46
     SYSTEM_PLUGIN_IDS = ("sys_settings", "sys_about")
 
-    def __init__(self, config_manager, plugin_manager):
+    def __init__(self, config_manager, plugin_manager, system_context=None):
         super().__init__()
         self.config_manager = config_manager
         self.plugin_manager = plugin_manager
+        if system_context is not None:
+            self.system_context = system_context
+        elif hasattr(plugin_manager, "get_system_context"):
+            self.system_context = plugin_manager.get_system_context()
+        else:
+            self.system_context = SystemContext.create(
+                app_settings=config_manager,
+                plugin_manager=plugin_manager,
+            )
         self.plugin_widgets = {} # plugin_id -> QWidget (in stacked widget)
+        self.system_entries = {}
         self._sidebar_expanded = True
         
         self.initUI()
@@ -228,7 +258,9 @@ class MainWindow(QMainWindow):
         for row in range(nav_list.count()):
             item = nav_list.item(row)
             p_id = item.data(Qt.ItemDataRole.UserRole)
-            plugin = self.plugin_manager.get_plugin(p_id)
+            plugin = self.system_entries.get(p_id)
+            if plugin is None:
+                plugin = self.plugin_manager.get_plugin(p_id)
             if plugin:
                 self._set_navigation_item_display(item, plugin)
 
@@ -266,10 +298,19 @@ class MainWindow(QMainWindow):
             if p_id not in pinned and p_id not in self.SYSTEM_PLUGIN_IDS:
                 self.add_plugin_item(plugin, self.nav_list)
 
-        # 系统设置、关于固定在导航底部，并保持稳定顺序。
-        for p_id in self.SYSTEM_PLUGIN_IDS:
-            if p_id in plugins:
-                self.add_plugin_item(plugins[p_id], self.system_nav_list)
+        # 系统入口由核心直接注册，不依赖普通插件扫描结果。
+        self.add_system_page(
+            "sys_settings",
+            "设置",
+            "⚙️",
+            lambda parent: SettingsWidget(self.system_context, parent),
+        )
+        self.add_system_page(
+            "sys_about",
+            "关于",
+            "ℹ️",
+            lambda parent: AboutPage(self.system_context, parent),
+        )
 
         self._resize_system_navigation()
 
@@ -278,6 +319,27 @@ class MainWindow(QMainWindow):
             self.nav_list.setCurrentRow(0)
         elif self.system_nav_list.count() > 0:
             self.system_nav_list.setCurrentRow(0)
+
+    def add_system_page(self, page_id, name, icon, factory):
+        if page_id in self.plugin_widgets:
+            return False
+        try:
+            widget = factory(self)
+            if not isinstance(widget, QWidget):
+                raise TypeError("核心页面 factory 必须返回 QWidget 实例")
+            self.stacked_widget.addWidget(widget)
+            entry = _NavigationEntry(page_id, name, icon)
+            self.system_entries[page_id] = entry
+            self.plugin_widgets[page_id] = widget
+            item = QListWidgetItem()
+            item.setSizeHint(QSize(0, self.NAV_ITEM_HEIGHT))
+            item.setData(Qt.ItemDataRole.UserRole, page_id)
+            self.system_nav_list.addItem(item)
+            self._set_navigation_item_display(item, entry)
+            return True
+        except Exception:
+            logger.exception("核心页面 %s 创建失败", page_id)
+            return False
 
     def add_plugin_item(self, plugin, nav_list=None):
         if nav_list is None:
@@ -302,7 +364,7 @@ class MainWindow(QMainWindow):
             self._set_navigation_item_display(item, plugin)
             return True
         except Exception:
-            logger.exception("插件 %s 页面创建失败，已跳过该插件", p_id)
+            logger.exception("插件页面创建失败：%s，已跳过该插件", p_id)
             return False
 
     def switch_page(self, row):

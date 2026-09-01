@@ -1,96 +1,179 @@
-# 🛠️ ToolX - 插件开发指南
+# ToolX 插件开发指南
 
-欢迎为 ToolX 开发新功能！本项目采用了非常轻量级的 `importlib` 动态加载机制，你可以轻松开发自己的专属工具并将其挂载到应用主界面的左侧导航中。
+ToolX 的普通功能插件运行在宿主进程中，但只能通过宿主传入的
+`PluginContext` 访问自己的配置、数据和有限的公共服务。设置、关于和插件
+生命周期管理属于核心系统功能，不需要也不能通过普通插件实现。
 
-## 1. 📂 目录结构规范
+## 1. 插件目录和清单
 
-所有的插件必须存放在 `plugins/` 目录下。你应该为你的插件创建一个独立的文件夹，文件夹名称最好为英文小写并使用下划线（如 `my_awesome_tool`）。
+内置插件放在项目的 `plugins/<id>/` 下；用户插件使用 `.toolx-plugin` 扩展名，
+本质上是一个 ZIP 包，且 `plugin.json` 必须位于包根目录：
 
 ```text
-ToolX/
-├── core/                    # 核心架构代码
-├── plugins/                 # 插件存放根目录
-│   ├── quick_copy/          # 内置的快速复制插件
-│   ├── my_awesome_tool/     # 你的插件目录
-│   │   ├── plugin.py        # 必须有的插件入口文件
-│   │   └── (其他代码、资源或子模块)
-├── main.py                  # 应用入口
-└── (用户数据保存在系统用户目录)
+example.toolx-plugin
+├── plugin.json
+├── plugin.py
+└── 其他 Python 模块或资源
 ```
 
-**⚠️ 核心要求**：
-* 插件文件夹内必须包含名为 `plugin.py` 的入口文件；其它 Python 模块和资源文件可以按需放置。
-* `get_plugin(config_manager)` 必须返回 `PluginInterface` 实例。
-* 每个插件的 `get_id()` 必须返回全局唯一、非空且不带首尾空格的字符串。
+清单至少包含以下字段：
 
----
+```json
+{
+  "id": "example",
+  "name": "示例插件",
+  "version": "1.0.0",
+  "api_version": 1,
+  "min_toolx_version": "1.0.0",
+  "entry": "plugin.py:get_plugin",
+  "description": "插件说明",
+  "author": "作者",
+  "homepage": "https://example.com",
+  "repository": "https://github.com/example/example",
+  "license": "MIT",
+  "permissions": [],
+  "dependencies": [],
+  "settings": {"has_pages": false}
+}
+```
 
-## 2. 📝 编写 `plugin.py`
+`id` 是稳定的全局标识，只能使用小写字母、数字、下划线和短横线；`name` 是
+可翻译的展示名称。`version` 使用三段式语义版本号。`entry` 的代码会在清单
+校验通过、用户确认并安装后才加载。
 
-你的 `plugin.py` 必须引入 `core.plugin_interface.PluginInterface` 并实现它，同时向外导出一个 `get_plugin(config_manager)` 的工厂方法。
+## 2. 编写插件
 
-### 最简示例代码：
+插件工厂接收 `PluginContext`，并返回 `PluginInterface` 实例：
 
 ```python
-import logging
+from PyQt6.QtWidgets import QLabel, QWidget
 
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel
 from core.plugin_interface import PluginInterface
 
 
-logger = logging.getLogger(__name__)
+class ExamplePlugin(PluginInterface):
+    def get_id(self):
+        return "example"
 
-# 1. 编写你的工具 UI 组件 (必须继承自 QWidget)
-class MyToolWidget(QWidget):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        
-        layout = QVBoxLayout(self)
-        label = QLabel("🚀 这是我的牛逼工具页面！")
-        layout.addWidget(label)
-
-# 2. 编写插件描述类 (必须继承 PluginInterface)
-class MyAwesomePlugin(PluginInterface):
-    def __init__(self, config_manager=None):
-        super().__init__(config_manager)
-        self.widget = None
-
-    def get_id(self) -> str:
-        # 要求全局唯一，例如文件夹名
-        return "my_awesome_tool"
-
-    def get_name(self) -> str:
-        # 左侧导航栏展示的中文名字
-        return "我的牛逼工具"
+    def get_name(self):
+        return "示例插件"
 
     def get_icon(self):
-        # 左侧导航栏展示的图标（建议返回一个 Emoji 字符串即可）
         return "🌟"
 
-    def get_widget(self, parent: QWidget) -> QWidget:
-        # 返回你的 UI 组件实例（懒加载模式，只有界面渲染时才实例化）
-        if self.widget is None:
-            self.widget = MyToolWidget(parent)
-        return self.widget
-        
-    def on_load(self):
-        # 插件当被扫描加载进系统时的生命周期回调（可选）
-        logger.info("MyAwesomePlugin 已加载")
+    def get_widget(self, parent: QWidget):
+        return QLabel("Hello ToolX", parent)
 
-    def on_unload(self):
-        # 插件被卸载或程序退出时的生命周期回调（可选）
-        pass
 
-# 3. 必须提供的入口方法，框架通过该方法获取插件实例
-def get_plugin(config_manager):
-    return MyAwesomePlugin(config_manager)
+def get_plugin(context):
+    return ExamplePlugin(context)
 ```
 
-## 3. 🧪 测试你的插件
+插件可使用以下接口：
 
-编写完 `plugin.py` 后，重启主程序 `main.py`。应用会在启动时扫描插件目录；单个插件导入、生命周期或页面创建失败时会跳过该插件，其它插件仍可继续启动，详细堆栈会写入用户数据目录下的 `logs/toolx.log`。
+```python
+context.config.get("key", default)
+context.config.set("key", value)
+context.config.update({"key": value})
+context.config.reset()
 
-如果要将插件打包进 PyInstaller 版本，还需要把插件模块加入 `ToolX.spec` 的 `hiddenimports`，并重新构建 exe。
+context.storage.read_json("data.json")
+context.storage.write_json("data.json", {"items": []})
+context.storage.data_dir()
+context.storage.cache_dir()
 
-> **关于本地配置存储**：
-> 如果你的插件需要保存用户的配置设置，可以直接利用在 `__init__` 中传入的 `config_manager` 对象，调用 `self.config_manager.set(key, value)` 及 `get(key)` 方法。配置会保存在用户数据目录下的 `toolx_config.json` 中。插件自己的业务数据建议使用独立文件，并通过原子写入避免程序中途退出造成损坏。
+context.services.logger.info("插件已加载")
+context.services.clipboard.read()
+context.services.clipboard.write("文本")
+context.services.open_url("https://example.com")
+context.services.open_path(context.storage.data_dir())
+context.services.theme
+context.services.app_info
+context.services.request_restart()
+```
+
+配置文件固定保存到用户数据目录的
+`plugin_data/<id>/settings.json`，业务数据和缓存也只能位于
+`plugin_data/<id>/` 下。插件不能获得完整的 `ConfigManager`、`PluginManager`、
+`MainWindow` 或其他插件的上下文。
+
+## 3. 插件设置页
+
+复杂设置可以贡献一个自定义页面。设置中心会统一处理页面创建、应用、取消
+和恢复默认：
+
+```python
+from PyQt6.QtWidgets import QLineEdit, QVBoxLayout, QWidget
+
+from core.plugin_interface import SettingsPage
+
+
+class ExampleSettings(QWidget):
+    def __init__(self, context, parent=None):
+        super().__init__(parent)
+        self.context = context
+        self.edit = QLineEdit(self)
+        QVBoxLayout(self).addWidget(self.edit)
+        self.load()
+
+    def load(self):
+        self.edit.setText(self.context.config.get("text", ""))
+
+    def apply(self):
+        value = self.edit.text().strip()
+        if not value:
+            return False
+        self.context.config.set("text", value)
+        return True
+
+    def reset(self):
+        self.edit.clear()
+
+
+class ExamplePlugin(PluginInterface):
+    # 其他接口省略
+    def get_settings_pages(self):
+        return [
+            SettingsPage(
+                page_id="general",
+                title="常规",
+                path=("插件", self.get_name()),
+                factory=lambda parent: ExampleSettings(self.context, parent),
+                plugin_id=self.get_id(),
+            )
+        ]
+```
+
+插件功能页中的设置入口也应打开核心设置中心提供的页面，避免维护第二套配置
+表单。
+
+## 4. 导入和生命周期
+
+用户可以在“设置 → 插件 → 插件管理”中查看元数据、导入本地包、启用、禁用和
+卸载插件。启用和禁用默认在下次启动生效；卸载默认只删除插件代码，保留配置
+和业务数据。“清理数据”是独立操作，必须经过明确确认。
+
+导入阶段会检查 ZIP 路径穿越、文件数量和大小、清单字段、入口文件、ToolX/API
+版本、插件 ID 冲突和依赖关系。第一版不会自动执行 `pip install`，插件应优先
+依赖标准库、PyQt6 和 ToolX 公开 API。
+
+生命周期钩子是可选的：
+
+```python
+def on_load(self):
+    self.context.services.logger.info("loaded")
+
+def on_unload(self):
+    pass
+```
+
+## 5. 本地测试和打包
+
+```powershell
+python -m pytest -q
+pyinstaller ToolX.spec
+```
+
+内置插件的 `plugin.json` 和代码会随程序打包；用户插件运行时从
+`%APPDATA%\ToolX\installed_plugins\<id>\<version>` 加载。设置和关于页面位于
+`core/settings/`，不再加入普通插件清单。

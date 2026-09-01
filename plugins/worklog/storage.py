@@ -5,7 +5,7 @@ import shutil
 import sys
 import tempfile
 
-from core.app_paths import get_app_data_dir
+from core.app_paths import get_app_data_dir, get_plugin_data_dir
 from core.atomic_json import atomic_write_json
 
 from .calculations import (
@@ -19,15 +19,21 @@ from .calculations import (
 logger = logging.getLogger(__name__)
 
 
-def get_worklog_data_file():
-    """Return the writable per-user worklog file path."""
-    return os.path.join(get_app_data_dir(), "worklog", "data.json")
+def get_worklog_data_file(context=None):
+    """Return the writable worklog file under the plugin-owned data root."""
+    storage = getattr(context, "storage", None) if context is not None else None
+    if storage is not None:
+        return os.path.join(storage.data_dir(), "data.json")
+    return os.path.join(get_plugin_data_dir("worklog"), "data.json")
 
 
 def get_legacy_worklog_data_files():
     """Return old worklog locations used before the user-data migration."""
     module_data_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data.json")
-    paths = [module_data_file]
+    paths = [
+        os.path.join(get_app_data_dir(), "worklog", "data.json"),
+        module_data_file,
+    ]
     if getattr(sys, "frozen", False):
         executable_data_file = os.path.join(
             os.path.dirname(sys.executable),
@@ -80,12 +86,17 @@ def _migrate_legacy_data(target_file):
 
 def load_worklog_data(
     data_file=None,
+    context=None,
     lunch_start_text=DEFAULT_LUNCH_BREAK_START_TIME,
     lunch_end_text=DEFAULT_LUNCH_BREAK_END_TIME,
 ):
-    """Load and normalize worklog data, migrating the old default location once."""
+    """Load and normalize worklog data through the plugin's storage boundary."""
     if data_file is None:
-        data_file = get_worklog_data_file()
+        try:
+            data_file = get_worklog_data_file(context)
+        except TypeError:
+            # Keep simple monkeypatched/legacy path providers working.
+            data_file = get_worklog_data_file()
         _migrate_legacy_data(data_file)
     else:
         data_file = os.fspath(data_file)
@@ -105,6 +116,9 @@ def load_worklog_data(
         return {"days": {}}, True
 
 
-def save_worklog_data(data_file, data):
+def save_worklog_data(data_file, data=None, context=None):
     """Persist the complete worklog structure using an atomic JSON replacement."""
+    if data is None:
+        data = data_file
+        data_file = get_worklog_data_file(context)
     atomic_write_json(data_file, ensure_data_shape(data), indent=2)

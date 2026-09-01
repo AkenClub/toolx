@@ -6,7 +6,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QIcon
-from core.config_manager import ConfigManager
+from core.config_manager import AppSettingsService
 from core.plugin_manager import PluginManager
 from core.main_window import MainWindow
 from core.app_paths import get_resource_path
@@ -18,7 +18,7 @@ def main():
     app.setWindowIcon(QIcon(get_resource_path("assets/app_icon.ico")))
     
     # 初始化配置管理器
-    config = ConfigManager()
+    config = AppSettingsService()
     
     # 初始化插件管理器
     plugin_mgr = PluginManager(config_manager=config, plugin_package="plugins")

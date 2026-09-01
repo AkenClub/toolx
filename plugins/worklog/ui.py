@@ -1,4 +1,5 @@
 import logging
+import os
 import uuid
 
 from PyQt6.QtCore import QDate, QSize, Qt, QTime
@@ -84,12 +85,37 @@ def get_right_arrow_icon():
 
 
 class WorklogWidget(QWidget):
-    def __init__(self, config_manager=None, parent=None):
+    def __init__(self, context=None, parent=None, config_manager=None):
+        if parent is None and isinstance(context, QWidget):
+            parent = context
+            context = None
         super().__init__(parent)
-        self.config_manager = config_manager
-        self.data_file = get_worklog_data_file()
-        initial_lunch = get_lunch_break_settings(self.config_manager)
+        if context is None and config_manager is not None:
+            context = config_manager
+        self.context = (
+            context
+            if hasattr(context, "config") and hasattr(context, "storage")
+            else None
+        )
+        # ``config_manager`` is retained only as a compatibility adapter for
+        # callers constructing the widget directly; normal plugins pass a
+        # PluginContext and never expose the app settings object.
+        self.config_manager = context if self.context is None else None
+        self.plugin_config = (
+            self.context.config if self.context is not None else self.config_manager
+        )
+        if self.context is not None:
+            self.data_file = get_worklog_data_file(self.context)
+        elif self.config_manager is not None and hasattr(self.config_manager, "paths"):
+            self.data_file = os.path.join(
+                self.config_manager.paths.plugin_data_dir("worklog"),
+                "data.json",
+            )
+        else:
+            self.data_file = get_worklog_data_file()
+        initial_lunch = get_lunch_break_settings(self.plugin_config)
         self.data, self.had_corrupted_data = load_worklog_data(
+            context=self.context,
             lunch_start_text=initial_lunch["start_time"],
             lunch_end_text=initial_lunch["end_time"],
         )
@@ -261,7 +287,7 @@ class WorklogWidget(QWidget):
         self.day_total_spin.setValue(DEFAULT_DAY_TOTAL_HOURS)
         self.day_total_spin.valueChanged.connect(self.on_day_total_changed)
 
-        lunch_settings = get_lunch_break_settings(self.config_manager)
+        lunch_settings = get_lunch_break_settings(self.plugin_config)
         lunch_label = QLabel("全局午休")
         self.lunch_start_edit = self.create_time_edit(
             lunch_settings["start_time"],
@@ -344,14 +370,14 @@ class WorklogWidget(QWidget):
                 "is_valid": is_valid_lunch_break(start_text, end_text),
             }
 
-        return get_lunch_break_settings(self.config_manager)
+        return get_lunch_break_settings(self.plugin_config)
 
     def save_lunch_break_settings(self):
-        if self.config_manager is None:
+        if self.plugin_config is None:
             return
 
         lunch_settings = self.get_active_lunch_break_settings()
-        self.config_manager.set(
+        self.plugin_config.set(
             LUNCH_BREAK_CONFIG_KEY,
             {
                 "start_time": lunch_settings["start_time"],
