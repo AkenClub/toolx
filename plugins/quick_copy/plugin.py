@@ -239,6 +239,22 @@ class QuickCopyWidget(QWidget):
             template = self.filename_template_edit.text().strip() or DEFAULT_FILENAME_TEMPLATE
             self.config.set(FILENAME_TEMPLATE_CONFIG_KEY, template)
 
+    def refresh_filename_template(self):
+        if self.config is None:
+            return
+
+        template = self.config.get(FILENAME_TEMPLATE_CONFIG_KEY, DEFAULT_FILENAME_TEMPLATE)
+        if not isinstance(template, str) or not template.strip():
+            template = DEFAULT_FILENAME_TEMPLATE
+        if self.filename_template_edit.text() == template:
+            return
+
+        self.filename_template_edit.blockSignals(True)
+        try:
+            self.filename_template_edit.setText(template)
+        finally:
+            self.filename_template_edit.blockSignals(False)
+
 
 class QuickCopyPlugin(PluginInterface):
     def __init__(self, context=None):
@@ -274,6 +290,10 @@ class QuickCopyPlugin(PluginInterface):
         if self.widget is not None:
             self.widget.save_settings()
 
+    def on_config_changed(self, key, _value):
+        if key in (FILENAME_TEMPLATE_CONFIG_KEY, "*") and self.widget is not None:
+            self.widget.refresh_filename_template()
+
 
 class QuickCopySettingsWidget(QWidget):
     def __init__(self, context, parent=None):
@@ -287,6 +307,8 @@ class QuickCopySettingsWidget(QWidget):
         layout.addWidget(self.template_edit)
         layout.addStretch(1)
         self.load()
+        if self.config is not None and hasattr(self.config, "changed"):
+            self.config.changed.connect(self.on_config_changed)
 
     def load(self):
         template = (
@@ -303,6 +325,10 @@ class QuickCopySettingsWidget(QWidget):
         if self.config is not None:
             self.config.set(FILENAME_TEMPLATE_CONFIG_KEY, template)
         return True
+
+    def on_config_changed(self, key, _value):
+        if key in (FILENAME_TEMPLATE_CONFIG_KEY, "*"):
+            self.load()
 
     def reset(self):
         self.template_edit.setText(DEFAULT_FILENAME_TEMPLATE)

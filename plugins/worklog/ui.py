@@ -385,6 +385,34 @@ class WorklogWidget(QWidget):
             },
         )
 
+    def refresh_lunch_break_settings(self):
+        if self.plugin_config is None:
+            return
+
+        lunch_settings = get_lunch_break_settings(self.plugin_config)
+        current_settings = self.get_active_lunch_break_settings()
+        if (
+            current_settings["start_time"] == lunch_settings["start_time"]
+            and current_settings["end_time"] == lunch_settings["end_time"]
+        ):
+            return
+
+        self.lunch_start_edit.blockSignals(True)
+        self.lunch_end_edit.blockSignals(True)
+        try:
+            self.lunch_start_edit.setTime(
+                QTime.fromString(lunch_settings["start_time"], "HH:mm")
+            )
+            self.lunch_end_edit.setTime(
+                QTime.fromString(lunch_settings["end_time"], "HH:mm")
+            )
+        finally:
+            self.lunch_start_edit.blockSignals(False)
+            self.lunch_end_edit.blockSignals(False)
+
+        self.recalculate_all_days()
+        self.load_current_date()
+
     def recalculate_all_days(self):
         lunch_settings = self.get_active_lunch_break_settings()
         for date_key in list(self.data.get("days", {}).keys()):

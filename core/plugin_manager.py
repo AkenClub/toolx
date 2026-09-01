@@ -41,6 +41,7 @@ class PluginManager:
         self.plugin_contexts = {}
         self.plugin_manifests = {}
         self.plugin_records = {}
+        self._config_change_handlers = {}
         self._system_context = None
 
         if plugin_dir is not None:
@@ -67,6 +68,8 @@ class PluginManager:
             plugin_manager=self,
             builtin_plugin_dir=self.plugin_dir,
         )
+        if getattr(self.plugin_admin, "plugin_manager", None) is None:
+            self.plugin_admin.plugin_manager = self
         # A supplied admin service may have been created before the manager;
         # make sure metadata-only discovery still sees this builtin root.
         if getattr(self.plugin_admin, "builtin_plugin_dir", None) is None:
@@ -226,6 +229,32 @@ class PluginManager:
         module_spec.loader.exec_module(module)
         return module
 
+    def _connect_config_notifications(self, plugin_id, plugin_instance, context):
+        config = getattr(context, "config", None)
+        changed_signal = getattr(config, "changed", None)
+        if changed_signal is None:
+            return
+
+        def handle_change(key, value):
+            try:
+                plugin_instance.on_config_changed(key, value)
+            except Exception:
+                logger.exception("插件 %s 响应配置变化失败", plugin_id)
+
+        changed_signal.connect(handle_change)
+        self._config_change_handlers[plugin_id] = (config, handle_change)
+
+    def _disconnect_config_notifications(self, plugin_id):
+        handler_record = self._config_change_handlers.pop(plugin_id, None)
+        if handler_record is None:
+            return
+
+        config, handle_change = handler_record
+        try:
+            config.changed.disconnect(handle_change)
+        except (TypeError, RuntimeError):
+            pass
+
     def _load_candidate(self, candidate):
         manifest = candidate["manifest"]
         plugin_id_hint = manifest.id if manifest is not None else candidate["folder_name"]
@@ -279,9 +308,11 @@ class PluginManager:
             )
             plugin_instance.context = context
 
+        self._connect_config_notifications(plugin_id, plugin_instance, context)
         try:
             plugin_instance.on_load()
         except Exception:
+            self._disconnect_config_notifications(plugin_id)
             logger.exception("插件 %s 的 on_load() 执行失败", plugin_id)
             try:
                 plugin_instance.on_unload()
@@ -345,6 +376,7 @@ class PluginManager:
 
     def unload_all(self):
         for plugin_id, plugin in list(self.plugins.items()):
+            self._disconnect_config_notifications(plugin_id)
             try:
                 plugin.on_unload()
             except Exception:

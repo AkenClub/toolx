@@ -18,6 +18,21 @@ def test_config_save_is_atomic_and_roundtrips(tmp_path):
     assert list(tmp_path.glob(".*.tmp")) == []
 
 
+def test_config_changes_emit_key_and_wildcard_events(qapp, tmp_path):
+    config = ConfigManager(str(tmp_path / "toolx_config.json"))
+    changes = []
+    config.changed.connect(lambda key, value: changes.append((key, value)))
+
+    config.set("example", {"enabled": True})
+    config.update({"theme": "dark"})
+    config.reset()
+
+    assert changes[0] == ("example", {"enabled": True})
+    assert changes[1] == ("*", {"theme": "dark"})
+    assert changes[2][0] == "*"
+    assert changes[2][1]["theme"] == "light"
+
+
 def test_default_config_migrates_legacy_file(monkeypatch, tmp_path):
     legacy_path = tmp_path / "legacy" / "toolx_config.json"
     target_path = tmp_path / "user-data" / "toolx_config.json"

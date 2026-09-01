@@ -84,6 +84,10 @@ class WorklogPlugin(PluginInterface):
             except Exception:
                 logger.exception("退出时保存任务工时失败")
 
+    def on_config_changed(self, key, _value):
+        if key in (LUNCH_BREAK_CONFIG_KEY, "*") and self.widget is not None:
+            self.widget.refresh_lunch_break_settings()
+
 
 class WorklogSettingsWidget(QWidget):
     def __init__(self, context, parent=None):
@@ -103,6 +107,8 @@ class WorklogSettingsWidget(QWidget):
         layout.addWidget(QLabel("午休设置只影响工时自动计算，不会修改已登记的原始记录。"))
         layout.addStretch(1)
         self.load()
+        if self.config is not None and hasattr(self.config, "changed"):
+            self.config.changed.connect(self.on_config_changed)
 
     def load(self):
         settings = get_lunch_break_settings(self.config)
@@ -120,6 +126,10 @@ class WorklogSettingsWidget(QWidget):
                 {"start_time": start_text, "end_time": end_text},
             )
         return True
+
+    def on_config_changed(self, key, _value):
+        if key in (LUNCH_BREAK_CONFIG_KEY, "*"):
+            self.load()
 
     def reset(self):
         self.start_edit.setTime(QTime.fromString(DEFAULT_LUNCH_BREAK_START_TIME, "HH:mm"))

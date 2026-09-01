@@ -1,6 +1,9 @@
+from copy import deepcopy
 import json
 import logging
 import os
+
+from PyQt6.QtCore import QObject, pyqtSignal
 
 from .app_paths import PluginPaths, get_config_file, get_legacy_config_files
 from .atomic_json import atomic_write_json
@@ -9,7 +12,7 @@ from .atomic_json import atomic_write_json
 logger = logging.getLogger(__name__)
 CURRENT_SCHEMA_VERSION = 2
 
-class ConfigManager:
+class ConfigManager(QObject):
     """Manage ToolX application settings only.
 
     Plugin settings are migrated out of this file and are thereafter owned by
@@ -17,7 +20,10 @@ class ConfigManager:
     name used by the existing host code.
     """
 
+    changed = pyqtSignal(str, object)
+
     def __init__(self, config_file=None, paths=None, data_dir=None):
+        super().__init__()
         explicit_data_root = paths is not None or data_dir is not None
         self.using_default_path = config_file is None and not explicit_data_root
         if data_dir is not None and paths is None:
@@ -148,21 +154,24 @@ class ConfigManager:
             logger.exception("配置文件保存失败: %s", self.config_file)
 
     def get(self, key, default=None):
-        return self.config.get(key, default)
+        return deepcopy(self.config.get(key, default))
 
     def set(self, key, value):
-        self.config[key] = value
+        self.config[key] = deepcopy(value)
         self.save_config()
+        self.changed.emit(key, deepcopy(value))
 
     def update(self, values):
         if not isinstance(values, dict):
             raise TypeError("应用配置更新值必须是 JSON 对象")
-        self.config.update(values)
+        self.config.update(deepcopy(values))
         self.save_config()
+        self.changed.emit("*", deepcopy(values))
 
     def reset(self):
         self.config = self.default_config()
         self.save_config()
+        self.changed.emit("*", deepcopy(self.config))
 
     def add_pinned(self, plugin_id):
         pinned = self.get("pinned_plugins", [])

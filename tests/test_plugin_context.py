@@ -26,6 +26,22 @@ def test_plugin_context_config_and_storage_are_isolated(tmp_path):
         context_a.storage.write_json("../other.json", {})
 
 
+def test_host_services_follow_application_theme_changes(qapp, tmp_path):
+    app_settings = ConfigManager(str(tmp_path / "toolx_config.json"))
+    context = PluginContext.create(
+        "plugin_a",
+        app_settings.paths,
+        app_settings=app_settings,
+    )
+    themes = []
+    context.services.theme_changed.connect(themes.append)
+
+    app_settings.set("theme", "dark")
+    context.services.set_theme("light")
+
+    assert themes == ["dark", "light"]
+
+
 def test_legacy_worklog_setting_moves_to_plugin_config(tmp_path):
     config_path = tmp_path / "toolx_config.json"
     config_path.write_text(
@@ -46,4 +62,3 @@ def test_legacy_worklog_setting_moves_to_plugin_config(tmp_path):
         "start_time": "12:15",
         "end_time": "13:45",
     }
-

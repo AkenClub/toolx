@@ -64,6 +64,10 @@ class PluginInterface:
         """生命周期函数：插件卸载或退出时调用（可选）"""
         pass
 
+    def on_config_changed(self, key, value):
+        """配置变化时调用（可选），由宿主统一转发当前插件的配置变更。"""
+        pass
+
     def get_settings_pages(self):
         """Return optional pages contributed to the core settings center."""
         return []

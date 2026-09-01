@@ -88,6 +88,7 @@ context.services.clipboard.write("文本")
 context.services.open_url("https://example.com")
 context.services.open_path(context.storage.data_dir())
 context.services.theme
+context.services.theme_changed.connect(on_theme_changed)
 context.services.app_info
 context.services.request_restart()
 ```
@@ -166,6 +167,26 @@ def on_load(self):
 def on_unload(self):
     pass
 ```
+
+如果插件的常驻界面依赖插件配置，应实现配置变化回调。宿主会自动监听当前
+插件的 `context.config.changed` 信号，并将变化转发给对应的插件实例；插件
+不需要修改 ToolX 核心代码，也不应访问其他插件的配置：
+
+```python
+class ExamplePlugin(PluginInterface):
+    def on_config_changed(self, key, value):
+        if key in ("text", "*") and self.widget is not None:
+            self.widget.reload_from_config()
+```
+
+`key` 是通过 `set()` 修改的配置键；`update()` 或整体 `reset()` 会使用 `"*"`
+表示可能有多个配置项发生变化。插件尚未创建主界面时无需处理，主界面创建时
+应从 `context.config` 读取最新值。该机制是配置热同步，不是插件代码热重载；
+插件启用、禁用和卸载仍按下次启动生效处理。
+
+应用级配置不会通过 `on_config_changed()` 转发给普通插件。需要关注主题时，
+使用 `context.services.theme_changed`；其他应用配置仍由核心设置和核心页面自己
+处理。这样可以保持插件配置隔离。
 
 ## 5. 本地测试和打包
 

@@ -505,6 +505,14 @@ class PluginAdminService:
 
     def reset_config(self, plugin_id):
         self._require_record(plugin_id)
+        get_context = getattr(self.plugin_manager, "get_plugin_context", None)
+        if callable(get_context):
+            context = get_context(plugin_id)
+            config = getattr(context, "config", None) if context is not None else None
+            reset = getattr(config, "reset", None)
+            if callable(reset):
+                reset()
+                return True
         atomic_write_json(self.paths.plugin_config_file(plugin_id), {}, indent=2)
         return True
 

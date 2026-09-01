@@ -24,10 +24,7 @@ class AppearancePage(QWidget):
         self.theme_combo.setCurrentIndex(max(index, 0))
 
     def apply(self):
-        settings = self.system_context.app_settings
-        if settings is not None:
-            settings.set("theme", self.theme_combo.currentData())
-        self.system_context.services.theme_changed.emit(str(self.theme_combo.currentData()))
+        self.system_context.services.set_theme(self.theme_combo.currentData())
         return True
 
     def reset(self):

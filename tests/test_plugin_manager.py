@@ -83,3 +83,60 @@ def test_plugin_manager_isolates_errors_and_rejects_duplicate_ids(tmp_path, monk
     assert "broken_factory" in caplog.text
     assert "on_load() 执行失败" in caplog.text
     manager.unload_all()
+
+
+def test_plugin_manager_forwards_config_changes_and_disconnects_on_unload(tmp_path, monkeypatch):
+    package_name, package_dir = _create_package(tmp_path)
+    _write_plugin(
+        package_dir,
+        "observer",
+        """
+        from core.plugin_interface import PluginInterface
+
+        class ObserverPlugin(PluginInterface):
+            def __init__(self, context):
+                super().__init__(context)
+                self.changes = []
+
+            def get_id(self):
+                return "observer"
+
+            def get_name(self):
+                return "Observer"
+
+            def get_widget(self, parent):
+                return None
+
+            def on_config_changed(self, key, value):
+                self.changes.append((key, value))
+
+        def get_plugin(context):
+            return ObserverPlugin(context)
+        """,
+    )
+
+    monkeypatch.syspath_prepend(str(tmp_path))
+    importlib.invalidate_caches()
+    manager = PluginManager(
+        config_manager=None,
+        plugin_package=package_name,
+        plugin_dir=str(package_dir),
+    )
+    manager.load_all_plugins()
+
+    plugin = manager.get_plugin("observer")
+    context = manager.get_plugin_context("observer")
+    context.config.set("answer", {"value": 42})
+    context.config.update({"enabled": True})
+
+    assert plugin.changes == [
+        ("answer", {"value": 42}),
+        ("*", {"enabled": True}),
+    ]
+
+    manager.unload_all()
+    context.config.set("after_unload", True)
+    assert plugin.changes == [
+        ("answer", {"value": 42}),
+        ("*", {"enabled": True}),
+    ]

@@ -68,6 +68,28 @@ def test_install_disable_enable_and_load_imported_plugin(tmp_path):
     assert (tmp_path / "plugin_data" / "imported_example" / "data.json").exists()
 
 
+def test_reset_loaded_plugin_config_uses_context_and_emits_change(tmp_path):
+    app_settings = ConfigManager(str(tmp_path / "config.json"))
+    admin = PluginAdminService(app_settings=app_settings)
+    package_path = tmp_path / "example.toolx-plugin"
+    _write_package(package_path)
+    admin.install_package(package_path)
+
+    manager = PluginManager(app_settings, plugin_dir=str(tmp_path / "builtin"))
+    manager.load_all_plugins()
+    context = manager.get_plugin_context("imported_example")
+    context.config.set("custom", "value")
+    changes = []
+    context.config.changed.connect(lambda key, value: changes.append((key, value)))
+
+    assert manager.plugin_admin.reset_config("imported_example") is True
+    assert context.config.get("custom") is None
+    assert context.config.as_dict() == {}
+    assert changes == [("*", {})]
+
+    manager.unload_all()
+
+
 def test_invalid_zip_path_is_rejected_before_extraction(tmp_path):
     app_settings = ConfigManager(str(tmp_path / "config.json"))
     admin = PluginAdminService(app_settings=app_settings)
@@ -81,4 +103,3 @@ def test_invalid_zip_path_is_rejected_before_extraction(tmp_path):
 
     assert not (tmp_path.parent / "escaped.txt").exists()
     assert not (tmp_path / "installed_plugins").exists()
-

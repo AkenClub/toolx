@@ -202,6 +202,16 @@ class HostServices(QObject):
         self._restart_callback = restart_callback
         self._app_version = app_version
         self.clipboard = _ClipboardService()
+        self._app_settings_change_connected = False
+        app_settings_changed = getattr(app_settings, "changed", None)
+        connect = getattr(app_settings_changed, "connect", None)
+        if callable(connect):
+            connect(self._on_app_settings_changed)
+            self._app_settings_change_connected = True
+
+    def _on_app_settings_changed(self, key, _value):
+        if key in ("theme", "*"):
+            self.theme_changed.emit(str(self.theme))
 
     @property
     def theme(self):
@@ -212,6 +222,9 @@ class HostServices(QObject):
     def set_theme(self, theme):
         if self._app_settings is not None:
             self._app_settings.set("theme", theme)
+            if not self._app_settings_change_connected:
+                self.theme_changed.emit(str(theme))
+            return
         self.theme_changed.emit(str(theme))
 
     @property
