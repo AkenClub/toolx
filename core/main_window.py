@@ -5,7 +5,6 @@ from PyQt6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QIcon
 from core.app_paths import get_resource_path
-from core.settings.pages.about import AboutPage
 from core.settings.settings_widget import SettingsWidget
 from core.system_context import SystemContext
 
@@ -305,16 +304,10 @@ class MainWindow(QMainWindow):
             "⚙️",
             lambda parent: SettingsWidget(self.system_context, parent),
         )
-        self.add_system_page(
-            "sys_about",
-            "关于",
-            "ℹ️",
-            lambda parent: AboutPage(self.system_context, parent),
-        )
 
         self._resize_system_navigation()
 
-        # 如果有插件，默认选中第一个普通插件；没有普通插件时选系统入口。
+        # 如果有插件，默认选中第一个普通插件；没有普通插件时选设置入口。
         if self.nav_list.count() > 0:
             self.nav_list.setCurrentRow(0)
         elif self.system_nav_list.count() > 0:

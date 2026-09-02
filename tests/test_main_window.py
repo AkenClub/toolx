@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import QLabel
 from core.config_manager import ConfigManager
 from core.main_window import MainWindow
 from core.plugin_interface import PluginInterface
-from plugins.about.plugin import AboutPlugin
+from core.settings.pages.about import AboutPage
 
 
 class GoodPlugin(PluginInterface):
@@ -104,7 +104,7 @@ def test_sidebar_separates_system_navigation_and_keeps_footer(qapp, tmp_path):
     assert [
         window.system_nav_list.item(index).data(Qt.ItemDataRole.UserRole)
         for index in range(window.system_nav_list.count())
-    ] == ["sys_settings", "sys_about"]
+    ] == ["sys_settings"]
     assert window.nav_list.sizePolicy().verticalPolicy().name == "Expanding"
     assert window.system_nav_list.sizePolicy().verticalPolicy().name == "Fixed"
     assert not hasattr(window, "logo_container")
@@ -139,12 +139,8 @@ def test_sidebar_separates_system_navigation_and_keeps_footer(qapp, tmp_path):
     window.close()
 
 
-def test_about_plugin_uses_short_navigation_name():
-    assert AboutPlugin().get_name() == "关于"
-
-
-def test_about_plugin_displays_application_logo(qapp):
-    widget = AboutPlugin().get_widget(None)
+def test_about_page_displays_application_logo(qapp):
+    widget = AboutPage()
 
     logo = widget.findChild(QLabel, "Logo")
     title = widget.findChild(QLabel, "Title")

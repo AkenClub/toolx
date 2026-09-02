@@ -23,10 +23,8 @@ def test_core_system_pages_are_available_without_feature_plugins(qapp, tmp_path)
     assert [
         window.system_nav_list.item(index).data(Qt.ItemDataRole.UserRole)
         for index in range(window.system_nav_list.count())
-    ] == ["sys_settings", "sys_about"]
+    ] == ["sys_settings"]
     assert window.system_nav_list.item(0).text().endswith("设置")
-    assert window.system_nav_list.item(1).text().endswith("关于")
     assert window.system_context.plugin_settings.list_pages() == []
 
     window.close()
-
